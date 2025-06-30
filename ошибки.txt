@@ -1,0 +1,346 @@
+2025-06-30 15:19:21 - NovelTranslator - INFO     - [MainThread] - Система логирования успешно настроена.
+Запуск графического интерфейса...
+2025-06-30 15:19:26 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Dao
+2025-06-30 15:19:26 - NovelTranslator.DBManager - INFO     - [Thread-1 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Dao' (ID: 1)
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
+2025-06-30 15:19:26 - NovelTranslator.KBManager - INFO     - [Thread-1 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Dao_kb'. Записей: 1379
+2025-06-30 15:19:27 - NovelTranslator.Core - INFO     - [Thread-1 (_initialize_thread)] - Модели Gemini (gemini-2.5-flash, models/text-embedding-004) успешно инициализированы.
+2025-06-30 15:19:27 - NovelTranslator.Core - INFO     - [SpaCyLoader] - Попытка загрузки NLP-модели: en_core_web_lg...
+2025-06-30 15:19:27 - NovelTranslator.Core - INFO     - [Thread-1 (_initialize_thread)] - Переводчик инициализирован для проекта 'Dao'. Загружено 1090 терминов, 289 записей в Библии. Индекс: 1379 векторов.
+2025-06-30 15:19:28 - NovelTranslator.Core - INFO     - [SpaCyLoader] - NLP-модель 'en_core_web_lg' успешно загружена.
+2025-06-30 15:19:41 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Nerd
+2025-06-30 15:19:41 - NovelTranslator.DBManager - INFO     - [Thread-4 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Nerd' (ID: 3)
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
+2025-06-30 15:19:41 - NovelTranslator.KBManager - INFO     - [Thread-4 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Nerd_kb'. Записей: 550
+2025-06-30 15:19:42 - NovelTranslator.Core - INFO     - [Thread-4 (_initialize_thread)] - Модели Gemini (gemini-2.5-pro, models/text-embedding-004) успешно инициализированы.
+2025-06-30 15:19:42 - NovelTranslator.Core - INFO     - [SpaCyLoader] - Попытка загрузки NLP-модели: en_core_web_lg...
+2025-06-30 15:19:42 - NovelTranslator.Core - INFO     - [Thread-4 (_initialize_thread)] - Переводчик инициализирован для проекта 'Nerd'. Загружено 345 терминов, 205 записей в Библии. Индекс: 550 векторов.
+2025-06-30 15:19:43 - NovelTranslator.Core - INFO     - [SpaCyLoader] - NLP-модель 'en_core_web_lg' успешно загружена.
+2025-06-30 15:20:00 - NovelTranslator.DBManager - INFO     - [Thread-6 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Nerd' (ID: 3)
+Failed to send telemetry event ClientStartEvent: capture() takes 1 positional argument but 3 were given
+Failed to send telemetry event ClientCreateCollectionEvent: capture() takes 1 positional argument but 3 were given
+2025-06-30 15:20:00 - NovelTranslator.KBManager - INFO     - [Thread-6 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Nerd_kb'. Записей: 550
+2025-06-30 15:20:01 - NovelTranslator.Core - INFO     - [Thread-6 (_initialize_thread)] - Модели Gemini (gemini-2.5-flash, models/text-embedding-004) успешно инициализированы.
+2025-06-30 15:20:01 - NovelTranslator.Core - INFO     - [SpaCyLoader] - Попытка загрузки NLP-модели: en_core_web_lg...
+2025-06-30 15:20:01 - NovelTranslator.Core - INFO     - [Thread-6 (_initialize_thread)] - Переводчик инициализирован для проекта 'Nerd'. Загружено 345 терминов, 205 записей в Библии. Индекс: 550 векторов.
+2025-06-30 15:20:02 - NovelTranslator.Core - INFO     - [SpaCyLoader] - NLP-модель 'en_core_web_lg' успешно загружена.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало ПОСЛЕДОВАТЕЛЬНОЙ обработки из 'C:/Users/User/Desktop/kod/Cultivation Nerd_Eng'
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 230 Why Do I Hear Boss Music.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 231 Do It Like Dark Souls!.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 232 The Compromise.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 233 The Home.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 234 That Girl is So Dangerous~.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 235 Youthful Granny Thoughts.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 236 A Monotonous Life.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 237 There is Honey in the Moon.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 238 A Harsh Truth!.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 239 A Tedious Life Story.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 240 Bad News is Not That Bad.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 241 A Blazing Prediction.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 242 The Next Journey.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 243 Book Title.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 244 Cheap.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 245 British Premium.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 246 A Casual Dinner.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 247 Blazing Sun Sect’s Betrayal.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 248 Absolute Control.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 249 The Intoxication of Absolute Control.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 250 Eye of The Tiger!.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 251 A Warrior’s Arm.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 252 A Warrior's End.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 253 A Cryptic Stage.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 254 The Dark Serpent.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 255 Art of The Deal.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 256 Obscene Preparation.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 257 Hearthfire Ice-Stem Flower.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 258 The Last Bad Choice.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 259 A Cat’s Lives.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 260 A Heavenly Treasure.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 261 Breakthrough To The Next Stage.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 262 The First Technique.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 263 Arrival at Civilization.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 264 Burials & Tears.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 265 Vacant Thrones.txt' уже существует. Пропущено.
+2025-06-30 15:20:16 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 266 Elder By Fire.txt'
+Failed to send telemetry event CollectionQueryEvent: capture() takes 1 positional argument but 3 were given
+2025-06-30 15:23:29 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
+2025-06-30 15:23:29 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
+2025-06-30 15:23:29 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 266 Elder By Fire.txt' завершен за 192.16 сек.
+Exception in thread BibleAnalyzer:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in analyze_and_propose_bible_entries
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in <genexpr>
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                         ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <WorldBibleEntry at 0x12c41b66410> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-06-30 15:23:29 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 267 Indulgence.txt'
+Exception in thread DictUpdater:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in update_dictionary_smart
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in <genexpr>
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                         ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Term at 0x12c41c1e510> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-06-30 15:26:11 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
+2025-06-30 15:26:11 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
+2025-06-30 15:26:11 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 267 Indulgence.txt' завершен за 162.81 сек.
+Exception in thread BibleAnalyzer:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in analyze_and_propose_bible_entries
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in <genexpr>
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                         ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+2025-06-30 15:26:12 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 268 Playing Catch With An Immortal.txt'
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <WorldBibleEntry at 0x12c41bd18d0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+Exception in thread DictUpdater:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in update_dictionary_smart
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in <genexpr>
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                         ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Term at 0x12c41c78f90> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-06-30 15:29:49 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
+2025-06-30 15:29:49 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
+2025-06-30 15:29:49 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 268 Playing Catch With An Immortal.txt' завершен за 217.00 сек.
+Exception in thread BibleAnalyzer:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in analyze_and_propose_bible_entries
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in <genexpr>
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                         ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+2025-06-30 15:29:49 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 269 The New Immortal.txt'
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <WorldBibleEntry at 0x12c41bfe1d0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+Exception in thread DictUpdater:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in update_dictionary_smart
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in <genexpr>
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                         ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Term at 0x12c41bcd550> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-06-30 15:32:28 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
+2025-06-30 15:32:28 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
+2025-06-30 15:32:28 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 269 The New Immortal.txt' завершен за 159.56 сек.
+Exception in thread BibleAnalyzer:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in analyze_and_propose_bible_entries
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in <genexpr>
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                         ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <WorldBibleEntry at 0x12c41bc7f90> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-06-30 15:32:28 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 270 The Old Meets The New.txt'
+Exception in thread DictUpdater:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in update_dictionary_smart
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in <genexpr>
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                         ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Term at 0x12c41ccfe90> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+2025-06-30 15:36:14 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
+2025-06-30 15:36:14 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
+2025-06-30 15:36:14 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 270 The Old Meets The New.txt' завершен за 226.06 сек.
+Exception in thread BibleAnalyzer:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in analyze_and_propose_bible_entries
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 384, in <genexpr>
+    known_entities = set(entry.english_name for entry in self.db_manager.get_all_world_bible_entries())
+                         ^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <WorldBibleEntry at 0x12c41bf1fd0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+Exception in thread DictUpdater:
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in update_dictionary_smart
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\Desktop\Perevod\Perevod\translator.py", line 445, in <genexpr>
+    existing_terms = set(term.english_term for term in self.db_manager.get_all_terms())
+                         ^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+  File "C:\Users\User\AppData\Local\Programs\Python\Python311\Lib\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Term at 0x12c3f9c3b10> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)

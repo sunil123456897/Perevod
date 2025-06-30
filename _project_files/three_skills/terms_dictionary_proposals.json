@@ -1,0 +1,22 @@
+{
+    "Soul Core 1x": {
+        "russian": "Ядро Души",
+        "category": "item",
+        "confidence": 0.95
+    },
+    "Soul Cores": {
+        "russian": "Ядра Души",
+        "category": "item",
+        "confidence": 0.95
+    },
+    "The Soul Cores": {
+        "russian": "Ядра Души",
+        "category": "item",
+        "confidence": 0.95
+    },
+    "the Heart of Darkness": {
+        "russian": "Сердце Тьмы",
+        "category": "concept",
+        "confidence": 0.9
+    }
+}
