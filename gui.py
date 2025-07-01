@@ -1,21 +1,23 @@
 # gui.py
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox, Menu
+from tkinter import filedialog, messagebox
 import os
 import shutil
 import threading
 import logging
 import time
-import json
 import re
 import difflib
 import sys
 import google.generativeai as genai
+import queue
 
-from translator import NovelTranslator, InitializationError
+
 from project_manager import ProjectManager
 from config import DEFAULT_SETTINGS, AVAILABLE_MODELS
+from database.database_manager import DatabaseManager
+from knowledge_base.knowledge_base_manager import KnowledgeBaseManager
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
@@ -54,7 +56,8 @@ class TranslatorGUI(ctk.CTk):
         self.geometry("1200x900")
         self.minsize(1100, 850)
 
-        self.translator = None
+        self.db_manager = None
+        self.kb_manager = None
         self.project_manager = ProjectManager()
         self.translation_running = False
         self.last_processed_texts = []
@@ -74,6 +77,28 @@ class TranslatorGUI(ctk.CTk):
         self.create_widgets()
         self._configure_logging()
         self.after(100, self.load_initial_settings)
+        # [НОВОЕ] Очереди для безопасного общения между потоками
+        self.hitl_request_queue = queue.Queue()
+        self.hitl_response_queue = queue.Queue()
+        # [НОВОЕ] Запускаем проверку очереди в главном потоке
+        self.after(100, self.process_hitl_queue)
+
+    def process_hitl_queue(self):
+        """Проверяет, есть ли запрос на вмешательство от рабочего потока."""
+        try:
+            request_data = self.hitl_request_queue.get_nowait()
+            if request_data:
+                # Открываем окно аудита и передаем ему данные и очередь для ответа
+                ConsistencyCheckerWindow(
+                    self, 
+                    report=request_data['report'], 
+                    response_queue=self.hitl_response_queue
+                )
+        except queue.Empty:
+            pass
+        finally:
+            # Повторяем проверку каждые 200 мс
+            self.after(200, self.process_hitl_queue)
 
     def _configure_logging(self):
         self.log_handler = TextHandler(self.log_textbox)
@@ -297,7 +322,8 @@ class TranslatorGUI(ctk.CTk):
     def initialize_translator_gui(self):
         current_settings = self.collect_settings_from_gui()
         if not current_settings.get('api_key'):
-            self.show_message("Ошибка", "API ключ не может быть пустым."); return
+            self.show_message("Ошибка", "API ключ не может быть пустым.")
+            return
         if not current_settings.get('project_name') or current_settings.get('project_name') == "Default":
             self.show_message("Ошибка", "Пожалуйста, выберите или создайте проект перед инициализацией.")
             return
@@ -364,10 +390,10 @@ class TranslatorGUI(ctk.CTk):
     def populate_world_bible_view(self):
         for widget in self.bible_scroll_frame.winfo_children():
             widget.destroy()
-        if not self.translator:
+        if not self.db_manager:
             return
         
-        bible_copy = self.translator.db_manager.get_world_bible()
+        bible_copy = self.db_manager.get_world_bible()
         
         if not bible_copy:
             return
@@ -395,10 +421,10 @@ class TranslatorGUI(ctk.CTk):
         for widget in self.bible_proposals_frame.winfo_children():
             widget.destroy()
         self.update_bible_proposal_tab_title()
-        if not self.translator:
+        if not self.db_manager:
             return
         
-        proposals_copy = self.translator.db_manager.get_world_bible_proposals()
+        proposals_copy = self.db_manager.get_world_bible_proposals()
         
         if not proposals_copy:
             return
@@ -419,32 +445,32 @@ class TranslatorGUI(ctk.CTk):
             ctk.CTkLabel(entry_frame, text=data.get('description', ''), wraplength=650, justify="left").grid(row=1, column=1, padx=5, pady=(0,5), sticky="w")
     
     def approve_all_bible_proposals(self):
-        if not self.translator:
+        if not self.db_manager:
             return
-        proposals = self.translator.db_manager.get_world_bible_proposals()
+        proposals = self.db_manager.get_world_bible_proposals()
         if not proposals:
             return
         if messagebox.askyesno("Одобрить все", f"Вы уверены, что хотите одобрить все {len(proposals)} предложений?"):
             for name, data in proposals.items():
-                self.translator.db_manager.add_or_update_bible_entry(name, data)
-            self.translator.db_manager.clear_world_bible_proposals()
+                self.db_manager.add_or_update_bible_entry(name, data)
+            self.db_manager.clear_world_bible_proposals()
             self.populate_world_bible_view()
             self.populate_bible_proposals_view()
             self.update_index_status()
 
     def reject_all_bible_proposals(self):
-        if not self.translator:
+        if not self.db_manager:
             return
-        count = self.translator.db_manager.count_world_bible_proposals()
+        count = self.db_manager.count_world_bible_proposals()
         if count == 0:
             return
         if messagebox.askyesno("Отклонить все", f"Вы уверены, что хотите отклонить все {count} предложений?"):
-            self.translator.db_manager.clear_world_bible_proposals()
+            self.db_manager.clear_world_bible_proposals()
             self.populate_bible_proposals_view()
             self.update_index_status()
 
     def add_or_update_bible_entry(self):
-        if not self.translator:
+        if not self.db_manager:
             return
         name = self.bible_name_var.get().strip()
         rus_name = self.bible_rus_name_var.get().strip()
@@ -458,7 +484,7 @@ class TranslatorGUI(ctk.CTk):
             "category": self.bible_category_var.get(),
             "description": description
         }
-        self.translator.db_manager.add_or_update_bible_entry(name, data)
+        self.db_manager.add_or_update_bible_entry(name, data)
         
         self.populate_world_bible_view()
         self.bible_name_var.set("")
@@ -478,7 +504,13 @@ class TranslatorGUI(ctk.CTk):
 
     def _initialize_thread(self, settings):
         try:
-            self.translator = NovelTranslator(settings=settings)
+            project_name = settings.get('project_name')
+            self.db_manager = DatabaseManager(project_name=project_name)
+            self.kb_manager = KnowledgeBaseManager(
+                project_name=project_name,
+                api_key=settings.get('api_key') or DEFAULT_SETTINGS['api_key'],
+                embedding_model_name=settings.get('embedding_model_name') or DEFAULT_SETTINGS['embedding_model_name']
+            )
             self.after(0, self.update_status, "Переводчик готов к работе", 1.0)
             self.after(0, self._set_controls_state, ctk.NORMAL)
             self.after(0, self.update_dictionary_button)
@@ -486,13 +518,14 @@ class TranslatorGUI(ctk.CTk):
             self.after(0, self.populate_bible_proposals_view)
             self.after(0, self.update_index_status)
         except Exception as e:
-            self.translator = None
+            self.db_manager = None
+            self.kb_manager = None
             self.after(0, self.show_message, "Ошибка инициализации", f"Ошибка: {e}")
             self.after(0, self.update_status, "Ошибка инициализации!", 0.0)
             self.after(0, self.init_button.configure, {"state": ctk.NORMAL})
 
     def _set_controls_state(self, state):
-        bible_state = state if self.translator else ctk.DISABLED
+        bible_state = state if self.db_manager else ctk.DISABLED
         if hasattr(self, 'bible_add_button'):
             self.bible_add_button.configure(state=bible_state)
         buttons = [self.init_button, self.start_button, self.dict_button, self.editor_button, self.consistency_button, self.master_editor_button, self.knowledge_button, self.build_index_button]
@@ -501,17 +534,17 @@ class TranslatorGUI(ctk.CTk):
                 if btn in [self.editor_button, self.consistency_button, self.master_editor_button]:
                     btn.configure(state=state if self.last_processed_texts else ctk.DISABLED)
                 elif btn in [self.knowledge_button, self.build_index_button]:
-                     btn.configure(state=state if self.translator else ctk.DISABLED)
+                     btn.configure(state=state if self.db_manager else ctk.DISABLED)
                 else:
                     btn.configure(state=state)
 
     def start_translation(self):
         if self.translation_running:
             return
-        if not self.translator or not self.translator.model:
+        if not self.db_manager or not self.kb_manager:
             self.show_message("Ошибка", "Переводчик не инициализирован.")
             return
-        if self.translator.kb_manager.collection.count() == 0:
+        if self.kb_manager.collection.count() == 0:
              if not messagebox.askyesno("Внимание", "Семантический индекс не построен. Перевод будет менее точным и медленным. \n\nВы хотите сначала построить индекс?"):
                  pass
              else:
@@ -527,46 +560,46 @@ class TranslatorGUI(ctk.CTk):
         threading.Thread(target=self._translation_thread, args=(settings,), daemon=True).start()
     
     def open_knowledge_auditor(self):
-        if not self.translator:
+        if not self.db_manager:
             self.show_message("Ошибка", "Сначала инициализируйте переводчик.")
             return
         if self.knowledge_auditor_window and self.knowledge_auditor_window.winfo_exists():
             self.knowledge_auditor_window.lift()
         else:
-            self.knowledge_auditor_window = KnowledgeAuditorWindow(self, self.translator)
+            self.knowledge_auditor_window = KnowledgeAuditorWindow(self, self.db_manager, self.kb_manager)
 
     def approve_bible_proposal(self, name):
-        if not self.translator:
+        if not self.db_manager:
             return
-        proposal = self.translator.db_manager.get_world_bible_proposal(name)
+        proposal = self.db_manager.get_world_bible_proposal(name)
         if proposal:
-            self.translator.db_manager.add_or_update_bible_entry(name, proposal)
-            self.translator.db_manager.delete_world_bible_proposal(name)
+            self.db_manager.add_or_update_bible_entry(name, proposal)
+            self.db_manager.delete_world_bible_proposal(name)
             self.populate_world_bible_view()
             self.populate_bible_proposals_view()
             self.update_index_status()
 
     def reject_bible_proposal(self, name):
-        if not self.translator:
+        if not self.db_manager:
             return
-        self.translator.db_manager.delete_world_bible_proposal(name)
+        self.db_manager.delete_world_bible_proposal(name)
         self.populate_bible_proposals_view()
         self.update_index_status()
     
     def delete_bible_entry(self, name):
-        if not self.translator:
+        if not self.db_manager:
             return
         if messagebox.askyesno("Удаление", f"Вы уверены, что хотите удалить запись '{name}'?"):
-            self.translator.db_manager.delete_bible_entry(name)
+            self.db_manager.delete_bible_entry(name)
             self.populate_world_bible_view()
             gui_logger.info(f"Запись '{name}' удалена.")
             self.update_index_status()
 
     def update_bible_proposal_tab_title(self):
-        if not self.translator:
+        if not self.db_manager:
             return
         
-        count = self.translator.db_manager.count_world_bible_proposals()
+        count = self.db_manager.count_world_bible_proposals()
 
         title = f"На утверждение ({count})" if count > 0 else "На утверждение"
         try:
@@ -575,7 +608,7 @@ class TranslatorGUI(ctk.CTk):
             pass
 
     def build_semantic_index_gui(self):
-        if not self.translator:
+        if not self.db_manager:
             self.show_message("Ошибка", "Сначала инициализируйте переводчик.")
             return
         
@@ -585,8 +618,8 @@ class TranslatorGUI(ctk.CTk):
 
     def _build_index_thread(self):
         try:
-            success = self.translator.build_semantic_index(
-                lambda p, s: self.after(0, self.update_status, s, p / 100.0)
+            success = self.kb_manager.rebuild_index_from_db(
+                self.db_manager, lambda p, s: self.after(0, self.update_status, s, p / 100.0)
             )
             if success:
                 self.after(0, self.show_message, "Успех", "Семантический индекс успешно построен/обновлен!")
@@ -606,12 +639,12 @@ class TranslatorGUI(ctk.CTk):
         self.update_index_status()
 
     def update_index_status(self):
-        if not self.translator:
+        if not self.db_manager:
             self.index_status_label.configure(text="Индекс: Н/Д", text_color="gray")
             return
         
-        index_size = self.translator.kb_manager.collection.count()
-        source_size = self.translator.db_manager.count_terms() + self.translator.db_manager.count_world_bible_entries()
+        index_size = self.kb_manager.collection.count()
+        source_size = self.db_manager.count_terms() + self.db_manager.count_world_bible_entries()
 
         if index_size == 0 and source_size > 0:
             self.index_status_label.configure(text="Индекс: не построен", text_color="#E57373")
@@ -677,7 +710,8 @@ class TranslatorGUI(ctk.CTk):
             if project_name != "Default":
                 self.initialize_translator_gui()
             else:
-                self.translator = None
+                self.db_manager = None
+                self.kb_manager = None
                 self._set_controls_state(ctk.DISABLED)
                 self.init_button.configure(state=ctk.NORMAL)
                 self.update_status("Выберите или создайте проект для начала работы.")
@@ -727,16 +761,58 @@ class TranslatorGUI(ctk.CTk):
     def _translation_thread(self, settings):
         start_time = time.monotonic()
         try:
-            self.translator.settings = settings
-            self.translator._apply_settings_to_attributes()
-            method = self.translator.process_novel_parallel if settings.get('parallel_translation') else self.translator.process_novel
-            success, processed_texts = method(settings['input_dir'], settings['output_dir'], lambda p, s: self.update_status(s, p / 100.0))
-            self.last_processed_texts = processed_texts
+            project_name = settings.get('project_name')
+            self.update_status(f"Запуск агентной системы для проекта '{project_name}'...", 0)
+            
+            # --- [ИЗМЕНЕНО] Цикл управления графом ---
+            current_state = None
+            user_input = None
+            
+            while True:
+                # Выполняем следующий шаг графа
+                state = execute_graph(
+                    project_name, 
+                    settings_overrides=settings,
+                    user_input=user_input,
+                    current_state=current_state
+                )
+
+                # Проверяем, не прервался ли граф
+                if state.get('__end__'):
+                    # Граф завершил работу
+                    self.last_processed_texts = state.get("processed_chapters", [])
+                    break
+
+                # Проверяем, является ли следующий шаг точкой прерывания
+                next_step = list(state.keys())[-1]
+                if next_step == "human_in_the_loop":
+                    gui_logger.info("Граф прерван. Ожидание решения от пользователя.")
+                    self.update_status("Требуется ваше решение для продолжения...", 0.9)
+                    
+                    # Отправляем данные в главный поток для отображения окна
+                    self.hitl_request_queue.put({
+                        "report": state['quality_assurance_report']
+                    })
+                    
+                    # Блокируем этот поток, пока не получим ответ от GUI
+                    user_input = self.hitl_response_queue.get()
+                    current_state = state # Сохраняем текущее состояние для возобновления
+                    
+                    self.update_status("Решение получено. Возобновление работы...", 0.95)
+                else:
+                    # Если это не конец и не прерывание, значит что-то пошло не так
+                    raise Exception(f"Неожиданное состояние графа. Последний узел: {next_step}")
+
+            # --- Конец цикла ---
+            
             duration = time.monotonic() - start_time
-            msg = f"Перевод {'успешно завершен' if success else 'завершен с ошибками'} за {duration:.2f} сек."
+            msg = f"Перевод успешно завершен за {duration:.2f} сек. Обработано глав: {len(self.last_processed_texts)}"
+            
+            self.after(0, self.update_status, msg, 1.0)
             self.after(0, self.show_message, "Завершено", msg)
+
         except Exception as e:
-            gui_logger.error(f"Критическая ошибка перевода: {e}", exc_info=True)
+            gui_logger.error(f"Критическая ошибка в графе: {e}", exc_info=True)
             self.after(0, self.show_message, "Критическая ошибка", f"Ошибка: {e}")
         finally:
             self.translation_running = False
@@ -744,7 +820,7 @@ class TranslatorGUI(ctk.CTk):
 
     def _finalize_translation_gui(self):
         self.init_button.configure(state=ctk.NORMAL)
-        state = ctk.NORMAL if self.translator and self.translator.model else ctk.DISABLED
+        state = ctk.NORMAL if self.db_manager else ctk.DISABLED
         buttons = [self.start_button, self.dict_button, self.knowledge_button, self.build_index_button]
         for btn in buttons:
             if btn and btn.winfo_exists():
@@ -759,28 +835,28 @@ class TranslatorGUI(ctk.CTk):
         self.update_index_status()
 
     def open_dictionary_editor(self):
-        if not self.translator:
+        if not self.db_manager:
             self.show_message("Ошибка", "Сначала инициализируйте переводчик.")
             return
         if self.dictionary_editor_window and self.dictionary_editor_window.winfo_exists():
             self.dictionary_editor_window.lift()
         else:
-            self.dictionary_editor_window = DictionaryEditor(self, self.translator)
+            self.dictionary_editor_window = DictionaryEditor(self, self.db_manager)
 
     def open_interactive_editor(self):
-        if not self.translator:
+        if not self.db_manager:
             self.show_message("Ошибка", "Сначала инициализируйте переводчик.")
             return
         if not self.last_processed_texts:
             self.show_message("Информация", "Нет данных для редактирования. Сначала выполните перевод.")
             return
-        if self.interactive_editor_window and self.interactive_editor_window.winfo_exists():
-            self.interactive_editor_window.lift()
-        else:
-            self.interactive_editor_window = InteractiveEditorWindow(self, self.translator, self.last_processed_texts)
+        # if self.interactive_editor_window and self.interactive_editor_window.winfo_exists():
+        #     self.interactive_editor_window.lift()
+        # else:
+        #     self.interactive_editor_window = InteractiveEditorWindow(self, self.db_manager, self.last_processed_texts)
     
     def open_consistency_checker(self):
-        if not self.translator:
+        if not self.db_manager:
             self.show_message("Ошибка", "Сначала инициализируйте переводчик.")
             return
         if not self.last_processed_texts:
@@ -789,10 +865,10 @@ class TranslatorGUI(ctk.CTk):
         if self.consistency_checker_window and self.consistency_checker_window.winfo_exists():
             self.consistency_checker_window.lift()
         else:
-            self.consistency_checker_window = ConsistencyCheckerWindow(self, self.translator, self.last_processed_texts)
+            self.consistency_checker_window = ConsistencyCheckerWindow(self, self.db_manager, self.last_processed_texts)
 
     def open_master_editor(self):
-        if not self.translator:
+        if not self.db_manager:
             self.show_message("Ошибка", "Сначала инициализируйте переводчик.")
             return
         if not self.last_processed_texts:
@@ -801,7 +877,7 @@ class TranslatorGUI(ctk.CTk):
         if self.master_editor_window and self.master_editor_window.winfo_exists():
             self.master_editor_window.lift()
         else:
-            self.master_editor_window = MasterEditorWindow(self, self.translator, self.last_processed_texts)
+            self.master_editor_window = MasterEditorWindow(self, self.db_manager, self.last_processed_texts)
 
     def show_message(self, title, message):
         if "Ошибка" in title:
@@ -816,19 +892,20 @@ class TranslatorGUI(ctk.CTk):
                 self.progress_bar.set(float(progress_value))
     
     def update_dictionary_button(self):
-        if not self.translator:
+        if not self.db_manager:
             return
         
-        num_proposals = self.translator.db_manager.count_dictionary_proposals()
+        num_proposals = self.db_manager.count_dictionary_proposals()
 
         text = f"Словарь ({num_proposals})" if num_proposals > 0 else "Словарь"
         color = ("#FFA000", "#FF8F00") if num_proposals > 0 else (ctk.ThemeManager.theme["CTkButton"]["fg_color"], ctk.ThemeManager.theme["CTkButton"]["hover_color"])
         self.dict_button.configure(text=text, fg_color=color[0], hover_color=color[1])
 
 class DictionaryEditor(ctk.CTkToplevel):
-    def __init__(self, parent, translator):
+    def __init__(self, parent, db_manager):
         super().__init__(parent)
-        self.main_app, self.translator = parent, translator
+        self.main_app = parent
+        self.db_manager = db_manager
         self.title("Редактор и Утверждение Словаря")
         self.geometry("1000x700")
         self.transient(parent)
@@ -888,7 +965,7 @@ class DictionaryEditor(ctk.CTkToplevel):
         self.main_textbox.delete("1.0", "end")
         search_term = self.search_var.get().lower()
         
-        dict_copy = self.translator.db_manager.get_terms_dictionary()
+        dict_copy = self.db_manager.get_terms_dictionary()
         
         sorted_dict = sorted(dict_copy.items())
         for eng, rus in sorted_dict:
@@ -900,7 +977,7 @@ class DictionaryEditor(ctk.CTkToplevel):
         self.proposals_textbox.configure(state="normal")
         self.proposals_textbox.delete("1.0", "end")
         
-        proposals_copy = self.translator.db_manager.get_dictionary_proposals()
+        proposals_copy = self.db_manager.get_dictionary_proposals()
         
         sorted_proposals = sorted(proposals_copy.items(), key=lambda item: item[1]['confidence'], reverse=True)
         for eng, data in sorted_proposals:
@@ -908,7 +985,7 @@ class DictionaryEditor(ctk.CTkToplevel):
         self.proposals_textbox.configure(state="disabled")
 
     def update_proposal_tab_title(self):
-        count = self.translator.db_manager.count_dictionary_proposals()
+        count = self.db_manager.count_dictionary_proposals()
         
         theme = ctk.ThemeManager.theme
         color = ("#FFA000", "#FF8F00") if count > 0 else (theme["CTkSegmentedButton"]["selected_color"], theme["CTkSegmentedButton"]["selected_hover_color"])
@@ -930,10 +1007,10 @@ class DictionaryEditor(ctk.CTkToplevel):
             if not eng_term:
                 return
             
-            proposal = self.translator.db_manager.get_dictionary_proposal(eng_term)
+            proposal = self.db_manager.get_dictionary_proposal(eng_term)
             if proposal:
-                self.translator.db_manager.add_or_update_term(eng_term, proposal['russian'], proposal['category'])
-                self.translator.db_manager.delete_dictionary_proposal(eng_term)
+                self.db_manager.add_or_update_term(eng_term, proposal['russian'], proposal['category'])
+                self.db_manager.delete_dictionary_proposal(eng_term)
 
             self.populate_proposals_list()
             self.populate_main_list()
@@ -949,29 +1026,29 @@ class DictionaryEditor(ctk.CTkToplevel):
             eng_term = self.get_selected_term_from_line(selected_text)
             if not eng_term:
                 return
-            self.translator.db_manager.delete_dictionary_proposal(eng_term)
+            self.db_manager.delete_dictionary_proposal(eng_term)
             self.populate_proposals_list()
             self.update_proposal_tab_title()
         except ctk.TclError:
             messagebox.showinfo("Информация", "Выделите строку термина для отклонения.", parent=self)
 
     def approve_all_terms(self):
-        proposals = self.translator.db_manager.get_dictionary_proposals()
+        proposals = self.db_manager.get_dictionary_proposals()
         if not proposals:
             return
         for eng, data in proposals.items():
-            self.translator.db_manager.add_or_update_term(eng, data['russian'], data['category'])
-        self.translator.db_manager.clear_dictionary_proposals()
+            self.db_manager.add_or_update_term(eng, data['russian'], data['category'])
+        self.db_manager.clear_dictionary_proposals()
         self.populate_proposals_list()
         self.populate_main_list()
         self.update_proposal_tab_title()
 
     def reject_all_terms(self):
-        count = self.translator.db_manager.count_dictionary_proposals()
+        count = self.db_manager.count_dictionary_proposals()
         if count == 0:
             return
         if messagebox.askyesno("Отклонить все", f"Вы уверены, что хотите отклонить все {count} предложений?", parent=self):
-            self.translator.db_manager.clear_dictionary_proposals()
+            self.db_manager.clear_dictionary_proposals()
             self.populate_proposals_list()
             self.update_proposal_tab_title()
 
@@ -980,7 +1057,7 @@ class DictionaryEditor(ctk.CTkToplevel):
         if not (eng and rus):
             messagebox.showerror("Ошибка", "Термин и перевод не могут быть пустыми", parent=self)
             return
-        self.translator.db_manager.add_or_update_term(eng, rus)
+        self.db_manager.add_or_update_term(eng, rus)
         self.eng_var.set("")
         self.rus_var.set("")
         self.populate_main_list()
@@ -992,7 +1069,7 @@ class DictionaryEditor(ctk.CTkToplevel):
                 return
             eng_term_to_delete = selected_text.split("->")[0].strip()
             if eng_term_to_delete and messagebox.askyesno("Удаление", f"Удалить термин '{eng_term_to_delete}'?", parent=self):
-                self.translator.db_manager.delete_term(eng_term_to_delete)
+                self.db_manager.delete_term(eng_term_to_delete)
                 self.populate_main_list()
         except ctk.TclError:
             messagebox.showinfo("Информация", "Выделите текст термина для удаления.", parent=self)
@@ -1002,9 +1079,11 @@ class DictionaryEditor(ctk.CTkToplevel):
         self.destroy()
 
 class KnowledgeAuditorWindow(ctk.CTkToplevel):
-    def __init__(self, parent, translator):
+    def __init__(self, parent, db_manager, kb_manager):
         super().__init__(parent)
-        self.main_app, self.translator = parent, translator
+        self.main_app = parent
+        self.db_manager = db_manager
+        self.kb_manager = kb_manager
         self.title("Интерактивный Аудитор Базы Знаний")
         self.geometry("1100x750")
         self.transient(parent)
@@ -1040,7 +1119,7 @@ class KnowledgeAuditorWindow(ctk.CTkToplevel):
         threading.Thread(target=self._analysis_thread, daemon=True).start()
 
     def _analysis_thread(self):
-        report = self.translator.audit_knowledge_base()
+        report = self.kb_manager.audit_knowledge_base(self.db_manager)
         self.after(0, self.display_report, report)
 
     def display_report(self, report):
@@ -1096,7 +1175,7 @@ class KnowledgeAuditorWindow(ctk.CTkToplevel):
                      ctk.CTkButton(action_frame, text=f"Перейти к '{item}' в Словаре", command=lambda i=item: self._handle_edit_dict_entry(i)).pack(pady=2, anchor="w", padx=5)
 
     def _handle_merge_duplicates(self, all_terms, primary_term):
-        if self.translator.merge_dictionary_terms(primary_term, [t for t in all_terms if t != primary_term]):
+        if self.db_manager.merge_dictionary_terms(primary_term, [t for t in all_terms if t != primary_term]):
             self.main_app.show_message("Успех", f"Термины успешно объединены в '{primary_term}'.")
             self.run_analysis()
             self.main_app.update_index_status()
@@ -1108,7 +1187,7 @@ class KnowledgeAuditorWindow(ctk.CTkToplevel):
         threading.Thread(target=self._auto_merge_thread, daemon=True).start()
 
     def _auto_merge_thread(self):
-        merged_count = self.translator.automerge_dictionary_duplicates()
+        merged_count = self.db_manager.automerge_dictionary_duplicates()
         self.after(0, self._finalize_auto_merge, merged_count)
 
     def _finalize_auto_merge(self, merged_count):
@@ -1121,7 +1200,7 @@ class KnowledgeAuditorWindow(ctk.CTkToplevel):
             self.main_app.show_message("Информация", "Дубликатов для автоматического объединения не найдено.")
 
     def _handle_edit_bible_entry(self, item_name):
-        bible_copy = self.translator.db_manager.get_world_bible()
+        bible_copy = self.db_manager.get_world_bible()
         if item_name in bible_copy:
             self.main_app.edit_bible_entry_from_list(item_name, bible_copy[item_name])
             self.main_app.lift()
@@ -1135,149 +1214,68 @@ class KnowledgeAuditorWindow(ctk.CTkToplevel):
         self.destroy()
 
 class ConsistencyCheckerWindow(ctk.CTkToplevel):
-    def __init__(self, parent, translator, processed_texts):
+    """
+    [ИЗМЕНЕНО] Теперь это окно просто отображает отчет.
+    Вся логика исправления находится в графе.
+    """
+    def __init__(self, parent, report, response_queue):
         super().__init__(parent)
-        self.main_app, self.translator, self.processed_texts = parent, translator, processed_texts
-        self.title("Аудитор Консистентности с Прямым Исправлением")
+        self.response_queue = response_queue
+        self.title("Аудитор Консистентности")
         self.geometry("900x700")
         self.transient(parent)
         self.grab_set()
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
-        top_frame = ctk.CTkFrame(self)
-        top_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-        ctk.CTkLabel(top_frame, text="Поиск и исправление неконсистентных переводов...", font=ctk.CTkFont(size=16)).pack(side="left", padx=10)
-        self.auto_unify_button = ctk.CTkButton(top_frame, text="Унифицировать всё (автоматически)", command=self.auto_unify_all, fg_color="#2E7D32", hover_color="#1B5E20")
-        self.auto_unify_button.pack(side="right", padx=10)
-
-        self.status_label = ctk.CTkLabel(self, text="Запуск анализа...")
-        self.status_label.grid(row=1, column=0, sticky="ew", padx=10)
+        ctk.CTkLabel(self, text="Обнаружены неконсистентности. Система попытается исправить их автоматически.", font=ctk.CTkFont(size=14)).grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="Найденные проблемы")
-        self.scroll_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.scroll_frame.grid(row=1, column=0, padx=10, pady=10, sticky="nsew")
         self.scroll_frame.grid_columnconfigure(0, weight=1)
         
-        threading.Thread(target=self.run_analysis, daemon=True).start()
+        ok_button = ctk.CTkButton(self, text="OK", command=self.on_close)
+        ok_button.grid(row=2, column=0, padx=10, pady=10)
 
-    def run_analysis(self):
-        self.auto_unify_button.configure(state="disabled")
-        report = self.translator.analyze_inconsistencies(self.processed_texts)
-        self.after(0, self.display_report, report)
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.display_report(report)
 
     def display_report(self, report):
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
+
         if "error" in report:
-            self.status_label.configure(text=f"Ошибка анализа: {report['error']}")
+            ctk.CTkLabel(self.scroll_frame, text=f"Ошибка анализа: {report['error']}").pack(padx=10, pady=10)
             return
+
         inconsistencies = report.get("inconsistencies", [])
         if not inconsistencies:
-            self.status_label.configure(text="Проблем не найдено. Поздравляем!")
-            self.auto_unify_button.configure(state="disabled")
+            ctk.CTkLabel(self.scroll_frame, text="Проблем не найдено.").pack(padx=10, pady=10)
             return
         
-        self.status_label.configure(text=f"Найдено проблем: {len(inconsistencies)}")
-        self.auto_unify_button.configure(state="normal")
         for i, issue in enumerate(inconsistencies):
             eng_term = issue.get("english_term")
             variants = issue.get("russian_variants", [])
-            if not eng_term or not variants or len(variants) < 2:
+            if not eng_term or not variants:
                 continue
+            
             issue_frame = ctk.CTkFrame(self.scroll_frame, border_width=1)
-            issue_frame.grid(row=i, column=0, padx=5, pady=5, sticky="ew")
-            issue_frame.grid_columnconfigure(1, weight=1)
-            ctk.CTkLabel(issue_frame, text=f"Термин (Eng): '{eng_term}'", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=2, padx=10, pady=5, sticky="w")
-            chosen_variant = ctk.StringVar(value=variants[0])
-            for j, variant in enumerate(variants):
-                ctk.CTkRadioButton(issue_frame, text=variant, variable=chosen_variant, value=variant).grid(row=j+1, column=0, padx=20, pady=2, sticky="w")
+            issue_frame.pack(fill="x", padx=5, pady=5)
             
-            ctk.CTkButton(issue_frame, text="Унифицировать и Сохранить", command=lambda e=eng_term, v=variants, c=chosen_variant, f=issue_frame: self.unify_and_save_term(e, v, c.get(), f)).grid(row=1, column=1, rowspan=len(variants), padx=10, sticky="e")
+            label_text = f"Термин: '{eng_term}' -> Варианты: {', '.join(variants)}"
+            ctk.CTkLabel(issue_frame, text=label_text, font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=5)
 
-    def unify_and_save_term(self, eng_term, old_variants, correct_variant, frame_to_disable):
-        for widget in frame_to_disable.winfo_children():
-            if isinstance(widget, (ctk.CTkButton, ctk.CTkRadioButton)):
-                widget.configure(state="disabled")
-        
-        button = next((w for w in frame_to_disable.winfo_children() if isinstance(w, ctk.CTkButton)), None)
-        if button:
-            button.configure(text="Обработка...")
-
-        self.status_label.configure(text=f"Унификация '{eng_term}' до '{correct_variant}'...")
-        threading.Thread(target=self._unify_thread, args=(eng_term, old_variants, correct_variant, frame_to_disable), daemon=True).start()
-
-    def _unify_thread(self, eng_term, old_variants, correct_variant, frame_to_disable):
-        replacements_count = 0
-        files_modified_count = 0
-        
-        variants_to_replace = [v for v in old_variants if v.lower() != correct_variant.lower()]
-
-        for chapter_data in self.processed_texts:
-            original_text = chapter_data['rus']
-            modified_text = original_text
-            file_was_modified = False
-
-            for old_variant in variants_to_replace:
-                modified_text, count = re.subn(r'\b' + re.escape(old_variant) + r'\b', correct_variant, modified_text, flags=re.IGNORECASE)
-                if count > 0:
-                    replacements_count += count
-                    file_was_modified = True
-            
-            if file_was_modified:
-                chapter_data['rus'] = modified_text
-                try:
-                    with open(chapter_data['output_path'], 'w', encoding='utf-8') as f:
-                        f.write(modified_text)
-                    files_modified_count += 1
-                except Exception as e:
-                    gui_logger.error(f"Не удалось сохранить унифицированный файл {chapter_data['output_path']}: {e}")
-                    self.after(0, self.show_message, "Ошибка Сохранения", f"Не удалось сохранить файл: {chapter_data['output_path']}\n{e}")
-
-        self.after(0, self._finalize_unification, replacements_count, files_modified_count, frame_to_disable)
-
-    def _finalize_unification(self, replacements_count, files_modified_count, frame_to_disable):
-        if self.main_app.interactive_editor_window and self.main_app.interactive_editor_window.winfo_exists():
-            self.main_app.interactive_editor_window.processed_texts = self.processed_texts
-            self.main_app.interactive_editor_window.load_chapter(self.main_app.interactive_editor_window.chapter_var.get())
-        
-        self.show_message("Успех", f"Унификация завершена.\nВыполнено замен: {replacements_count}\nИзменено файлов: {files_modified_count}")
-        
-        frame_to_disable.destroy()
-        
-        if not self.scroll_frame.winfo_children():
-            self.status_label.configure(text="Все проблемы решены!")
-            self.auto_unify_button.configure(state="disabled")
-
-    def auto_unify_all(self):
-        self.status_label.configure(text="Запуск автоматической унификации...")
-        self.auto_unify_button.configure(state="disabled", text="Обработка...")
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
-        threading.Thread(target=self._auto_unify_all_thread, daemon=True).start()
-
-    def _auto_unify_all_thread(self):
-        summary = self.translator.run_auto_unification(self.processed_texts)
-        self.after(0, self._finalize_auto_unify_all, summary)
-
-    def _finalize_auto_unify_all(self, summary):
-        if self.main_app.interactive_editor_window and self.main_app.interactive_editor_window.winfo_exists():
-            self.main_app.interactive_editor_window.processed_texts = self.processed_texts
-            self.main_app.interactive_editor_window.load_chapter(self.main_app.interactive_editor_window.chapter_var.get())
-
-        message = (f"Автоматическая унификация завершена.\n\n"
-                   f"Найдено и обработано проблем: {summary['issues_found']}\n"
-                   f"Всего сделано замен: {summary['replacements_made']}\n"
-                   f"Изменено файлов на диске: {summary['files_modified']}")
-        self.show_message("Авто-унификация завершена", message)
+    def on_close(self):
+        if self.response_queue:
+            self.response_queue.put({"action": "closed"})
         self.destroy()
 
-    def show_message(self, title, message):
-        messagebox.showinfo(title, message, parent=self)
-
 class MasterEditorWindow(ctk.CTkToplevel):
-    def __init__(self, parent, translator, processed_texts):
+    def __init__(self, parent, db_manager, processed_texts):
         super().__init__(parent)
-        self.main_app, self.translator, self.processed_texts = parent, translator, processed_texts
+        self.main_app = parent
+        self.db_manager = db_manager
+        self.processed_texts = processed_texts
         self.edited_text_full = ""
         self.title("Мастер-Редактор (Глобальная стилистическая правка)")
         self.geometry("1200x800")
@@ -1300,7 +1298,7 @@ class MasterEditorWindow(ctk.CTkToplevel):
         threading.Thread(target=self.run_master_edit_thread, daemon=True).start()
 
     def run_master_edit_thread(self):
-        edited_text, error = self.translator.run_master_edit(self.processed_texts)
+        edited_text, error = self.db_manager.run_master_edit(self.processed_texts)
         self.after(0, self.display_results, edited_text, error)
 
     def display_results(self, edited_text, error):
@@ -1335,7 +1333,7 @@ class MasterEditorWindow(ctk.CTkToplevel):
         if not self.edited_text_full:
             messagebox.showerror("Ошибка", "Нет отредактированного текста для сохранения.", parent=self)
             return
-        output_dir = self.translator.settings.get("output_dir")
+        output_dir = self.main_app.settings_vars['output_dir'].get()
         new_dir = filedialog.askdirectory(initialdir=output_dir, title="Выберите папку для сохранения мастер-версии")
         if not new_dir:
             return

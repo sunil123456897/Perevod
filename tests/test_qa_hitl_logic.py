@@ -1,0 +1,259 @@
+import unittest
+from unittest.mock import MagicMock, patch
+import os
+import sys
+
+# Добавляем корневую директорию проекта в sys.path, чтобы импорты работали
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from agents.state import AgentState
+from agents.tools import tool_analyze_inconsistencies
+from agents.nodes import quality_assurance_node, human_in_the_loop_node, supervisor_node
+from graph_runner import build_graph
+
+class TestQAHITLLogic(unittest.TestCase):
+
+    def setUp(self):
+        # Мокаем внешние зависимости
+        self.mock_db_manager = MagicMock()
+        self.mock_kb_manager = MagicMock()
+        self.mock_model = MagicMock()
+        self.mock_model.generate_content.return_value.text = '```json{"inconsistencies": []}```'
+        
+        # Мокаем genai.configure
+        self.patcher_genai_configure = patch('google.generativeai.configure')
+        self.mock_genai_configure = self.patcher_genai_configure.start()
+
+        # Мокаем genai.GenerativeModel
+        self.patcher_generative_model = patch('google.generativeai.GenerativeModel', return_value=self.mock_model)
+        self.mock_generative_model = self.patcher_generative_model.start()
+
+        # Мокаем logger, чтобы не засорять вывод тестов
+        self.patcher_logger = patch('logging.Logger.info')
+        self.mock_logger_info = self.patcher_logger.start()
+        self.patcher_logger_error = patch('logging.Logger.error')
+        self.mock_logger_error = self.patcher_logger_error.start()
+        self.patcher_logger_warning = patch('logging.Logger.warning')
+        self.mock_logger_warning = self.patcher_logger_warning.start()
+
+        # Настройки по умолчанию для тестов
+        self.default_settings = {
+            "api_key": "test_api_key",
+            "model_name": "gemini-pro",
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_text_length": 10000,
+            "overlap_size": 500,
+            "input_dir": "input_dir_mock", # Добавлено
+            "output_dir": "output_dir_mock" # Добавлено
+        }
+
+    def tearDown(self):
+        self.patcher_genai_configure.stop()
+        self.patcher_generative_model.stop()
+        self.patcher_logger.stop()
+        self.patcher_logger_error.stop()
+        self.patcher_logger_warning.stop()
+
+    def test_tool_analyze_inconsistencies_no_inconsistencies(self):
+        # Мокаем ответ модели без неконсистентностей
+        self.mock_model.generate_content.return_value.text = '```json{"inconsistencies": []}```'
+        
+        processed_texts = [
+            {"title": "Chapter 1", "rus_text": "Текст главы 1."},
+            {"title": "Chapter 2", "rus_text": "Текст главы 2."}
+        ]
+        dictionary = {"Term": "Термин"}
+        
+        report = tool_analyze_inconsistencies(processed_texts, dictionary, self.mock_model, self.default_settings)
+        
+        self.assertIn("inconsistencies", report)
+        self.assertEqual(report["inconsistencies"], [])
+        self.mock_model.generate_content.assert_called_once()
+
+    def test_tool_analyze_inconsistencies_with_inconsistencies(self):
+        # Мокаем ответ модели с неконсистентностями
+        mock_response_text = '''```json
+        {
+            "inconsistencies": [
+                {"english_term": "Frodo", "russian_variants": ["Фродо", "Фроду"]},
+                {"english_term": "Gandalf", "russian_variants": ["Гэндальф", "Гендальф"]}
+            ]
+        }
+        ```'''
+        self.mock_model.generate_content.return_value.text = mock_response_text
+        
+        processed_texts = [
+            {"title": "Chapter 1", "rus_text": "Фродо пошел. Гэндальф пришел."},
+            {"title": "Chapter 2", "rus_text": "Фроду вернулся. Гендальф ушел."}
+        ]
+        dictionary = {}
+        
+        report = tool_analyze_inconsistencies(processed_texts, dictionary, self.mock_model, self.default_settings)
+        
+        self.assertIn("inconsistencies", report)
+        self.assertEqual(len(report["inconsistencies"]), 2)
+        self.assertEqual(report["inconsistencies"][0]["english_term"], "Frodo")
+        self.assertIn("Фродо", report["inconsistencies"][0]["russian_variants"])
+        self.mock_model.generate_content.assert_called_once()
+
+    def test_quality_assurance_node(self):
+        # Мокаем get_terms_dictionary
+        self.mock_db_manager.get_terms_dictionary.return_value = {"Test": "Тест"}
+        
+        initial_state = AgentState(
+            project_name="test_project",
+            project_settings=self.default_settings,
+            chapters_to_process=[],
+            processed_chapters=[{"title": "Ch1", "rus_text": "Текст"}],
+            current_chapter_data={},
+            error=None,
+            # db_manager и kb_manager теперь передаются через config
+        )
+        
+        mock_config = {"configurable": {"db_manager": self.mock_db_manager, "kb_manager": self.mock_kb_manager}}
+
+        # Мокаем tool_analyze_inconsistencies, чтобы он возвращал конкретный отчет
+        with patch('agents.tools.tool_analyze_inconsistencies', return_value={"inconsistencies": [{"english_term": "test", "russian_variants": ["тест1", "тест2"]}]}) as mock_analyze:
+            result_state = quality_assurance_node(initial_state, mock_config)
+            
+            self.assertIn("quality_assurance_report", result_state)
+            self.assertEqual(result_state["quality_assurance_report"], {"inconsistencies": [{"english_term": "test", "russian_variants": ["тест1", "тест2"]}]})
+            mock_analyze.assert_called_once()
+            self.mock_db_manager.get_terms_dictionary.assert_called_once()
+
+    def test_qa_router_no_inconsistencies(self):
+        from graph_runner import qa_router # Импортируем маршрутизатор напрямую
+        state = AgentState(
+            project_name="test_project",
+            project_settings=self.default_settings,
+            chapters_to_process=[],
+            processed_chapters=[],
+            current_chapter_data={},
+            error=None,
+            db_manager=self.mock_db_manager,
+            kb_manager=self.mock_kb_manager,
+            quality_assurance_report={"inconsistencies": []}
+        )
+        
+        next_step = qa_router(state) # Вызываем функцию маршрутизатора напрямую
+        self.assertEqual(next_step, "end")
+
+    def test_qa_router_with_inconsistencies(self):
+        from graph_runner import qa_router # Импортируем маршрутизатор напрямую
+        state = AgentState(
+            project_name="test_project",
+            project_settings=self.default_settings,
+            chapters_to_process=[],
+            processed_chapters=[],
+            current_chapter_data={},
+            error=None,
+            db_manager=self.mock_db_manager,
+            kb_manager=self.mock_kb_manager,
+            quality_assurance_report={"inconsistencies": [{"english_term": "test", "russian_variants": ["тест1", "тест2"]}]}
+        )
+        
+        next_step = qa_router(state) # Вызываем функцию маршрутизатора напрямую
+        self.assertEqual(next_step, "evaluate")
+
+    def test_human_in_the_loop_node_with_user_decision(self):
+        initial_state = AgentState(
+            project_name="test_project",
+            project_settings=self.default_settings,
+            chapters_to_process=[],
+            processed_chapters=[],
+            current_chapter_data={},
+            error=None,
+            db_manager=self.mock_db_manager,
+            kb_manager=self.mock_kb_manager,
+            quality_assurance_report={"inconsistencies": [{"term": "test"}]},
+            user_decision={"action": "unify", "english_term": "Test", "correct_variant": "Тест"}
+        )
+        
+        result_state = human_in_the_loop_node(initial_state)
+        
+        self.assertIsNone(result_state["quality_assurance_report"])
+        self.assertIsNone(result_state["user_decision"])
+        self.mock_logger_info.assert_called_with("Получено решение от пользователя: {'action': 'unify', 'english_term': 'Test', 'correct_variant': 'Тест'}")
+
+    def test_human_in_the_loop_node_no_user_decision(self):
+        initial_state = AgentState(
+            project_name="test_project",
+            project_settings=self.default_settings,
+            chapters_to_process=[],
+            processed_chapters=[],
+            current_chapter_data={},
+            error=None,
+            db_manager=self.mock_db_manager,
+            kb_manager=self.mock_kb_manager,
+            quality_assurance_report={"inconsistencies": [{"term": "test"}]}
+        )
+        
+        result_state = human_in_the_loop_node(initial_state)
+        
+        self.assertIn("error", result_state)
+        self.assertEqual(result_state["error"], "Процесс возобновлен, но решение от пользователя не было получено.")
+        self.mock_logger_info.assert_called_with("Узел: Взаимодействие с пользователем (HITL)")
+
+
+    @patch('agents.tools.tool_read_chapter', return_value="This is a test chapter.")
+    @patch('agents.tools.tool_write_chapter')
+    @patch('agents.tools.tool_translate_chunk', return_value="Translated text.")
+    @patch('agents.tools.tool_analyze_inconsistencies')
+    def test_graph_hitl_flow(self, mock_analyze_inconsistencies, mock_translate_chunk, mock_write_chapter, mock_read_chapter):
+        # Мокаем, что есть неконсистентности, чтобы граф остановился
+        mock_analyze_inconsistencies.return_value = {"inconsistencies": [{"english_term": "test", "russian_variants": ["тест1", "тест2"]}]}
+        
+        # Мокаем get_project_settings и get_terms_dictionary
+        self.mock_db_manager.get_project_settings.return_value = self.default_settings
+        self.mock_db_manager.get_terms_dictionary.return_value = {}
+
+        # Создаем мок для initialize_project_node
+        mock_initialize_project_node = MagicMock()
+        mock_initialize_project_node.return_value = {
+            "chapters_to_process": [], # Нет глав для обработки, чтобы сразу перейти к QA
+            "processed_chapters": [{"title": "Ch1", "rus_text": "Текст"}], # Есть обработанные главы для QA
+            "project_settings": self.default_settings
+        }
+
+        # Мокаем supervisor_node, чтобы он направлял поток
+        mock_supervisor_node = MagicMock()
+        mock_supervisor_node.side_effect = [
+            {"next_agent": "initialize"}, # 1. Начать с инициализации
+            {"next_agent": "quality_assurance"}, # 2. Затем перейти к QA
+            {"next_agent": "evaluate"}, # 3. Затем к оценке
+            {"next_agent": "apply_fixes"}, # 4. Затем к применению исправлений
+            {"next_agent": "FINISH"} # 5. Завершить
+        ]
+
+        with patch('graph_runner.supervisor_node', new=mock_supervisor_node):
+            with patch('graph_runner.initialize_project_node', new=mock_initialize_project_node):
+                # Имитируем первый запуск графа
+                initial_state = {"project_name": "test_project", "project_settings": self.default_settings}
+                
+                # Создаем инстанс графа
+                app = build_graph()
+
+                # Мокаем зависимости, которые теперь передаются через `configurable`
+                mock_config = {"configurable": {"db_manager": self.mock_db_manager, "kb_manager": self.mock_kb_manager}}
+                
+                # Используем stream для проверки промежуточных состояний
+                final_state = None
+                for state_step in app.stream(initial_state, config=mock_config):
+                    final_state = state_step
+
+                # Проверяем, что граф завершился
+                self.assertIsNotNone(final_state)
+                # Проверяем, что supervisor_node был вызван 5 раз
+                self.assertEqual(mock_supervisor_node.call_count, 5)
+
+                # Проверяем, что tool_analyze_inconsistencies был вызван
+                mock_analyze_inconsistencies.assert_called_once()
+                
+                # Эти моки больше не должны вызываться в этом упрощенном тесте
+                mock_read_chapter.assert_not_called()
+                mock_write_chapter.assert_not_called()
+                mock_translate_chunk.assert_not_called()
+
+if __name__ == '__main__':
+    unittest.main()

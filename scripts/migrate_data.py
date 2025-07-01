@@ -3,7 +3,6 @@
 import os
 import json
 import sys
-import logging
 
 # Добавляем корневую директорию в путь, чтобы импортировать модули приложения
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -32,7 +31,7 @@ def migrate_project(project_name, project_config, base_dir):
     
     # 2. Сохраняем настройки проекта
     db_manager.update_project_settings(project_config)
-    print(f"[OK] Настройки проекта сохранены в SQLite.")
+    print("[OK] Настройки проекта сохранены в SQLite.")
 
     # 3. Мигрируем словарь
     dict_path = os.path.join(base_dir, project_name, 'terms_dictionary.json')
@@ -53,9 +52,9 @@ def migrate_project(project_name, project_config, base_dir):
         print(f"[OK] Библия Вселенной мигрирована: {len(bible)} записей.")
     
     # 5. Перестраиваем семантический индекс в ChromaDB
-    print(f"[*] Запуск перестройки семантического индекса в ChromaDB...")
+    print("[*] Запуск перестройки семантического индекса в ChromaDB...")
     kb_manager.rebuild_index_from_db(db_manager)
-    print(f"[OK] Семантический индекс построен.")
+    print("[OK] Семантический индекс построен.")
     
     print(f"--- Миграция проекта '{project_name}' успешно завершена ---")
 

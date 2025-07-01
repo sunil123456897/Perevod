@@ -113,12 +113,23 @@ class DatabaseManager:
     def get_all_world_bible_entries(self):
         """Возвращает все записи Библии Вселенной для текущего проекта."""
         with self.session_scope() as session:
-            return session.query(WorldBibleEntry).filter_by(project_id=self.project_id).all()
+            entries = session.query(WorldBibleEntry).filter_by(project_id=self.project_id).all()
+            return [{
+                "english_name": entry.english_name,
+                "russian_name": entry.russian_name,
+                "category": entry.category,
+                "description": entry.description
+            } for entry in entries]
 
     def get_all_terms(self):
         """Возвращает все термины для текущего проекта."""
         with self.session_scope() as session:
-            return session.query(Term).filter_by(project_id=self.project_id).all()
+            terms = session.query(Term).filter_by(project_id=self.project_id).all()
+            return [{
+                "english_term": term.english_term,
+                "russian_term": term.russian_term,
+                "category": term.category
+            } for term in terms]
 
     def get_term_by_english(self, english_term):
         """Находит термин по английскому варианту."""

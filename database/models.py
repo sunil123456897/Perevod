@@ -1,7 +1,6 @@
 # database/models.py
 
-from sqlalchemy import (create_engine, Column, Integer, String, Text, Boolean, 
-                        Float, ForeignKey, JSON)
+from sqlalchemy import (create_engine, Column, Integer, String, Text, Float, ForeignKey, JSON)
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
 # Базовый класс для всех наших моделей ORM

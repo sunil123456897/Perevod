@@ -4,7 +4,8 @@ import os
 import logging
 import chromadb
 import google.generativeai as genai
-import numpy as np
+from agents.semantic_chunker import SemanticChunker
+from agents.reranker import Reranker
 
 logger = logging.getLogger("NovelTranslator.KBManager")
 
@@ -21,6 +22,7 @@ class KnowledgeBaseManager:
         os.makedirs(self.chroma_path, exist_ok=True)
 
         self.client = chromadb.PersistentClient(path=self.chroma_path)
+        # chromadb.utils.telemetry.disable() # Temporarily commented out due to AttributeError
         
         # Настройка функции для эмбеддингов
         if self.api_key:
@@ -36,11 +38,14 @@ class KnowledgeBaseManager:
             name=f"{project_name}_kb",
             embedding_function=self.embedding_function
         )
+        self.chunker = SemanticChunker(max_chunk_size=1024, min_chunk_size=100) # Initialize SemanticChunker
+        self.reranker = Reranker() # Initialize Reranker
         logger.info(f"KnowledgeBaseManager инициализирован. Коллекция: '{self.collection.name}'. Записей: {self.collection.count()}")
 
     def _get_embedding(self, text, task_type="RETRIEVAL_DOCUMENT"):
         """Ручное получение эмбеддинга, если embedding_function недоступна."""
-        if not self.api_key: return None
+        if not self.api_key:
+            return None
         try:
             result = genai.embed_content(model=self.embedding_model_name, content=text, task_type=task_type)
             return result['embedding']
@@ -60,34 +65,38 @@ class KnowledgeBaseManager:
         )
         logger.info(f"Добавлено/обновлено {len(ids)} записей в ChromaDB.")
         
-    def query(self, query_text, n_results=5, relevance_threshold=0.75):
-        """Выполняет семантический поиск по базе знаний."""
+    def query(self, query_text, top_k=5, n_candidates=25):
+        """Выполняет семантический поиск по базе знаний с двухэтапным ранжированием."""
         if not query_text or self.collection.count() == 0:
             return ""
 
+        # Этап 1: Recall (извлечение кандидатов с помощью Bi-Encoder/ChromaDB)
         results = self.collection.query(
             query_texts=[query_text],
-            n_results=n_results
+            n_results=n_candidates # Извлекаем больше кандидатов для переранжирования
         )
 
-        # ChromaDB возвращает косинусное расстояние, а не сходство.
-        # distance = 1 - similarity. Нам нужно similarity >= threshold, т.е. distance <= 1 - threshold.
-        distance_threshold = 1 - relevance_threshold
-        
-        relevant_docs = []
-        if results and results['documents']:
-            for i, doc in enumerate(results['documents'][0]):
-                distance = results['distances'][0][i]
-                if distance <= distance_threshold:
-                    relevant_docs.append(doc)
+        candidate_docs = []
+        if results and results['documents'] and results['documents'][0]:
+            for i, doc_content in enumerate(results['documents'][0]):
+                candidate_docs.append({'text': doc_content, 'id': results['ids'][0][i], 'metadata': results['metadatas'][0][i]})
 
-        if not relevant_docs:
+        if not candidate_docs:
+            return ""
+
+        # Этап 2: Precision (переранжирование с помощью Cross-Encoder)
+        reranked_docs = self.reranker.rerank(query_text, candidate_docs)
+
+        # Возвращаем топ-k наиболее релевантных документов
+        final_relevant_docs = reranked_docs[:top_k]
+
+        if not final_relevant_docs:
             return ""
 
         context_str = "\n## Relevant Context (from Knowledge Base)\n"
         context_str += "- Use this highly relevant, automatically selected information for consistency.\n\n"
-        for text in relevant_docs:
-            context_str += f"- {text}\n"
+        for doc in final_relevant_docs:
+            context_str += f"- {doc['text']}\n"
         
         return context_str
 
@@ -100,8 +109,14 @@ class KnowledgeBaseManager:
         
         items_to_index = []
         for name, data in bible.items():
-            text_to_embed = f"{name}: {data.get('description', '')}"
-            items_to_index.append({'id': f"bible_{name}", 'text': text_to_embed, 'metadata': {'source': 'bible', 'name': name}})
+            description_chunks = self.chunker.chunk(data.get('description', ''))
+            for i, chunk in enumerate(description_chunks):
+                text_to_embed = f"{name}: {chunk}"
+                items_to_index.append({
+                    'id': f"bible_{name}_chunk_{i}", 
+                    'text': text_to_embed, 
+                    'metadata': {'source': 'bible', 'name': name, 'chunk_index': i}
+                })
         
         for term, translation in terms.items():
             text_to_embed = f"Термин: {term} (Перевод: {translation})"
@@ -112,7 +127,8 @@ class KnowledgeBaseManager:
             logger.info("Нет данных для индексации.")
             if self.collection.count() > 0:
                 self.collection.delete() # Очищаем, если что-то было
-            if progress_callback: progress_callback(100, "Нет данных для индексации")
+            if progress_callback:
+                progress_callback(100, "Нет данных для индексации")
             return
 
         # Пакетная обработка для эффективности
@@ -129,4 +145,5 @@ class KnowledgeBaseManager:
             )
         
         logger.info(f"Перестройка индекса завершена. Всего в коллекции: {self.collection.count()} записей.")
-        if progress_callback: progress_callback(100, f"Индекс построен: {self.collection.count()} записей")
+        if progress_callback:
+            progress_callback(100, f"Индекс построен: {self.collection.count()} записей")

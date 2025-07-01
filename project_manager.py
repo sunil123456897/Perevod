@@ -1,11 +1,8 @@
 # project_manager.py
 
 import os
-import json
 import logging
 from config import DEFAULT_SETTINGS
-from database.database_manager import DatabaseManager
-from sqlalchemy.orm import Session
 from database.models import Project, get_engine_and_session
 
 logger = logging.getLogger("NovelTranslator.Projects")

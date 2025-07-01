@@ -1,84 +1,138 @@
-2025-06-30 15:58:04 - NovelTranslator - INFO     - [MainThread] - Система логирования успешно настроена.
-2025-06-30 15:58:07 - NovelTranslator.Projects - DEBUG    - [MainThread] - Менеджер проектов инициализирован. Файл БД: C:\Users\User\Desktop\Perevod\Perevod\_project_files\projects_main.db
-2025-06-30 15:58:08 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Dao
-2025-06-30 15:58:08 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Dao'
-2025-06-30 15:58:08 - NovelTranslator.Core - DEBUG    - [Thread-1 (_initialize_thread)] - Инициализация NovelTranslator...
-2025-06-30 15:58:08 - NovelTranslator.DBManager - INFO     - [Thread-1 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Dao' (ID: 1)
-2025-06-30 15:58:08 - NovelTranslator.KBManager - INFO     - [Thread-1 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Dao_kb'. Записей: 1379
-2025-06-30 15:58:09 - NovelTranslator.Core - DEBUG    - [Thread-1 (_initialize_thread)] - Инициализация моделей Gemini: gemini-2.5-flash, models/text-embedding-004
-2025-06-30 15:58:09 - NovelTranslator.Core - INFO     - [Thread-1 (_initialize_thread)] - Модели Gemini (gemini-2.5-flash, models/text-embedding-004) успешно инициализированы.
-2025-06-30 15:58:09 - NovelTranslator.Core - INFO     - [SpaCyLoader] - Попытка загрузки NLP-модели: en_core_web_lg...
-2025-06-30 15:58:09 - NovelTranslator.Core - INFO     - [Thread-1 (_initialize_thread)] - Переводчик инициализирован для проекта 'Dao'. Загружено 1090 терминов, 289 записей в Библии. Индекс: 1379 векторов.
-2025-06-30 15:58:11 - NovelTranslator.Core - INFO     - [SpaCyLoader] - NLP-модель 'en_core_web_lg' успешно загружена.
-2025-06-30 15:58:23 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Nerd
-2025-06-30 15:58:23 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Nerd'
-2025-06-30 15:58:23 - NovelTranslator.Core - DEBUG    - [Thread-4 (_initialize_thread)] - Инициализация NovelTranslator...
-2025-06-30 15:58:23 - NovelTranslator.DBManager - INFO     - [Thread-4 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Nerd' (ID: 3)
-2025-06-30 15:58:23 - NovelTranslator.KBManager - INFO     - [Thread-4 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Nerd_kb'. Записей: 550
-2025-06-30 15:58:23 - NovelTranslator.Core - DEBUG    - [Thread-4 (_initialize_thread)] - Инициализация моделей Gemini: gemini-2.5-pro, models/text-embedding-004
-2025-06-30 15:58:24 - NovelTranslator.Core - INFO     - [Thread-4 (_initialize_thread)] - Модели Gemini (gemini-2.5-pro, models/text-embedding-004) успешно инициализированы.
-2025-06-30 15:58:24 - NovelTranslator.Core - INFO     - [SpaCyLoader] - Попытка загрузки NLP-модели: en_core_web_lg...
-2025-06-30 15:58:24 - NovelTranslator.Core - INFO     - [Thread-4 (_initialize_thread)] - Переводчик инициализирован для проекта 'Nerd'. Загружено 345 терминов, 205 записей в Библии. Индекс: 550 векторов.
-2025-06-30 15:58:33 - NovelTranslator.Core - INFO     - [SpaCyLoader] - NLP-модель 'en_core_web_lg' успешно загружена.
-2025-06-30 15:58:53 - NovelTranslator.Core - DEBUG    - [Thread-7 (_initialize_thread)] - Инициализация NovelTranslator...
-2025-06-30 15:58:53 - NovelTranslator.DBManager - INFO     - [Thread-7 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Nerd' (ID: 3)
-2025-06-30 15:58:53 - NovelTranslator.KBManager - INFO     - [Thread-7 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Nerd_kb'. Записей: 550
-2025-06-30 15:58:53 - NovelTranslator.Core - DEBUG    - [Thread-7 (_initialize_thread)] - Инициализация моделей Gemini: gemini-2.5-flash, models/text-embedding-004
-2025-06-30 15:58:54 - NovelTranslator.Core - INFO     - [Thread-7 (_initialize_thread)] - Модели Gemini (gemini-2.5-flash, models/text-embedding-004) успешно инициализированы.
-2025-06-30 15:58:54 - NovelTranslator.Core - INFO     - [SpaCyLoader] - Попытка загрузки NLP-модели: en_core_web_lg...
-2025-06-30 15:58:54 - NovelTranslator.Core - INFO     - [Thread-7 (_initialize_thread)] - Переводчик инициализирован для проекта 'Nerd'. Загружено 345 терминов, 205 записей в Библии. Индекс: 550 векторов.
-2025-06-30 15:58:55 - NovelTranslator.Core - INFO     - [SpaCyLoader] - NLP-модель 'en_core_web_lg' успешно загружена.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало ПОСЛЕДОВАТЕЛЬНОЙ обработки из 'C:/Users/User/Desktop/kod/Cultivation Nerd_Eng'
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 230 Why Do I Hear Boss Music.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 231 Do It Like Dark Souls!.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 232 The Compromise.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 233 The Home.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 234 That Girl is So Dangerous~.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 235 Youthful Granny Thoughts.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 236 A Monotonous Life.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 237 There is Honey in the Moon.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 238 A Harsh Truth!.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 239 A Tedious Life Story.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 240 Bad News is Not That Bad.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 241 A Blazing Prediction.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 242 The Next Journey.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 243 Book Title.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 244 Cheap.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 245 British Premium.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 246 A Casual Dinner.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 247 Blazing Sun Sect’s Betrayal.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 248 Absolute Control.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 249 The Intoxication of Absolute Control.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 250 Eye of The Tiger!.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 251 A Warrior’s Arm.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 252 A Warrior's End.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 253 A Cryptic Stage.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 254 The Dark Serpent.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 255 Art of The Deal.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 256 Obscene Preparation.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 257 Hearthfire Ice-Stem Flower.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 258 The Last Bad Choice.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 259 A Cat’s Lives.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 260 A Heavenly Treasure.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 261 Breakthrough To The Next Stage.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 266 Elder By Fire.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 267 Indulgence.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 268 Playing Catch With An Immortal.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 269 The New Immortal.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Глава 'Chapter 270 The Old Meets The New.txt' уже существует. Пропущено.
-2025-06-30 15:59:03 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 262 The First Technique.txt'
-2025-06-30 16:02:27 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
-2025-06-30 16:02:27 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
-2025-06-30 16:02:27 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 262 The First Technique.txt' завершен за 203.86 сек.
-2025-06-30 16:02:27 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 263 Arrival at Civilization.txt'
-2025-06-30 16:06:59 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
-2025-06-30 16:06:59 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
-2025-06-30 16:06:59 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 263 Arrival at Civilization.txt' завершен за 272.19 сек.
-2025-06-30 16:06:59 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 264 Burials & Tears.txt'
-2025-06-30 16:12:00 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
-2025-06-30 16:12:00 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
-2025-06-30 16:12:00 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 264 Burials & Tears.txt' завершен за 301.06 сек.
-2025-06-30 16:12:00 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Начало перевода главы: 'Chapter 265 Vacant Thrones.txt'
-2025-06-30 16:17:35 - NovelTranslator.Core - INFO     - [DictUpdater] - Начало умного обновления словаря...
-2025-06-30 16:17:35 - NovelTranslator.Core - INFO     - [BibleAnalyzer] - Начало анализа текста для Библии Вселенной...
-2025-06-30 16:17:35 - NovelTranslator.Core - INFO     - [Thread-9 (_translation_thread)] - Перевод главы 'Chapter 265 Vacant Thrones.txt' завершен за 334.34 сек.
+2025-07-01 11:57:37 - NovelTranslator - INFO     - [MainThread] - Система логирования успешно настроена.
+2025-07-01 11:57:39 - NovelTranslator.Projects - DEBUG    - [MainThread] - Менеджер проектов инициализирован. Файл БД: C:\Users\User\Desktop\kod\Perevod\_project_files\projects_main.db
+2025-07-01 11:57:40 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Dao
+2025-07-01 11:57:40 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Dao'
+2025-07-01 11:57:40 - NovelTranslator.DBManager - INFO     - [Thread-1 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Dao' (ID: 1)
+2025-07-01 11:57:40 - NovelTranslator.KBManager - INFO     - [Thread-1 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Dao_kb'. Записей: 0
+2025-07-01 11:58:06 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Начало полной перестройки семантического индекса из SQLite...
+2025-07-01 11:58:33 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 11:59:01 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 11:59:23 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 11:59:44 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:00:06 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:00:28 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:00:50 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:01:12 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:01:34 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:01:56 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:02:18 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:02:40 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:03:02 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:03:24 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:03:54 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:04:15 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:04:37 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:04:59 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:05:21 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:05:43 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:06:05 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:06:26 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:06:48 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:07:10 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:07:31 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:07:53 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:08:15 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:08:28 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Добавлено/обновлено 29 записей в ChromaDB.
+2025-07-01 12:08:28 - NovelTranslator.KBManager - INFO     - [Thread-2 (_build_index_thread)] - Перестройка индекса завершена. Всего в коллекции: 1379 записей.
+2025-07-01 12:08:57 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Fermer
+2025-07-01 12:08:57 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Fermer'
+2025-07-01 12:08:57 - NovelTranslator.DBManager - INFO     - [Thread-1383 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Fermer' (ID: 2)
+2025-07-01 12:08:58 - NovelTranslator.KBManager - INFO     - [Thread-1383 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Fermer_kb'. Записей: 0
+2025-07-01 12:09:15 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Начало полной перестройки семантического индекса из SQLite...
+2025-07-01 12:09:38 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:10:00 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:10:22 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:10:43 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:11:05 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:11:27 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:11:48 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:12:10 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:12:32 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:12:54 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:13:26 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:13:48 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:14:11 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:14:32 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:14:54 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:15:16 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:15:38 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:15:59 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:16:21 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:16:43 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:17:05 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:17:26 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:17:48 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:18:10 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:18:33 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:18:55 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:19:16 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:19:42 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:20:04 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:20:26 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:20:47 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:21:09 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:21:31 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:22:02 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:22:12 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Добавлено/обновлено 24 записей в ChromaDB.
+2025-07-01 12:22:12 - NovelTranslator.KBManager - INFO     - [Thread-1384 (_build_index_thread)] - Перестройка индекса завершена. Всего в коллекции: 1724 записей.
+2025-07-01 12:22:34 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Nerd
+2025-07-01 12:22:34 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Nerd'
+2025-07-01 12:22:34 - NovelTranslator.DBManager - INFO     - [Thread-3110 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Nerd' (ID: 3)
+2025-07-01 12:22:34 - NovelTranslator.KBManager - INFO     - [Thread-3110 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Nerd_kb'. Записей: 0
+2025-07-01 12:22:42 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Начало полной перестройки семантического индекса из SQLite...
+2025-07-01 12:23:05 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:23:26 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:23:48 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:24:11 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:24:32 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:24:54 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:25:15 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:25:37 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:25:59 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:26:20 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:26:42 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:26:42 - NovelTranslator.KBManager - INFO     - [Thread-3111 (_build_index_thread)] - Перестройка индекса завершена. Всего в коллекции: 550 записей.
+2025-07-01 12:30:35 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Test
+2025-07-01 12:30:35 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Default'
+2025-07-01 12:30:41 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Three_skills
+2025-07-01 12:30:41 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Three_skills'
+2025-07-01 12:30:41 - NovelTranslator.DBManager - INFO     - [Thread-3662 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Three_skills' (ID: 4)
+2025-07-01 12:30:41 - NovelTranslator.KBManager - INFO     - [Thread-3662 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Three_skills_kb'. Записей: 0
+2025-07-01 12:30:57 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Начало полной перестройки семантического индекса из SQLite...
+2025-07-01 12:31:19 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:31:42 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:32:03 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:32:25 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:32:47 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:33:09 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:33:31 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:33:53 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:34:17 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:34:39 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:35:01 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:35:23 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:35:46 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:36:08 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:36:29 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:36:51 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:37:13 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:37:28 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Добавлено/обновлено 34 записей в ChromaDB.
+2025-07-01 12:37:28 - NovelTranslator.KBManager - INFO     - [Thread-3663 (_build_index_thread)] - Перестройка индекса завершена. Всего в коллекции: 884 записей.
+2025-07-01 12:37:54 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Tribe
+2025-07-01 12:37:54 - NovelTranslator.GUI - DEBUG    - [MainThread] - Применение настроек для проекта 'Tribe'
+2025-07-01 12:37:54 - NovelTranslator.DBManager - INFO     - [Thread-4549 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Tribe' (ID: 5)
+2025-07-01 12:37:54 - NovelTranslator.KBManager - INFO     - [Thread-4549 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Tribe_kb'. Записей: 0
+2025-07-01 12:38:02 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Начало полной перестройки семантического индекса из SQLite...
+2025-07-01 12:38:25 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:38:47 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:39:09 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:39:31 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:39:52 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:40:14 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:40:37 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:40:59 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:41:21 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:41:43 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:42:06 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 50 записей в ChromaDB.
+2025-07-01 12:42:09 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Добавлено/обновлено 7 записей в ChromaDB.
+2025-07-01 12:42:09 - NovelTranslator.KBManager - INFO     - [Thread-4550 (_build_index_thread)] - Перестройка индекса завершена. Всего в коллекции: 557 записей.
