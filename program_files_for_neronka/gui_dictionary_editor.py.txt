@@ -1,21 +1,19 @@
+
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import logging
-from Perevod.gui.base_editor_window import BaseEditorWindow
+from Perevod.gui.paginated_editor import PaginatedEditorWindow
 
 gui_logger = logging.getLogger("NovelTranslator.GUI")
 
-class DictionaryEditorWindow(BaseEditorWindow):
+class DictionaryEditorWindow(PaginatedEditorWindow):
     def __init__(self, master, db_manager):
         super().__init__(master, "Редактор Словаря")
         self.db_manager = db_manager
-        self.all_terms = []
         self.all_proposals = []
-        self.term_widgets = {} 
-        self.current_page_terms = 1
+        self.term_widgets = {}
         self.current_page_proposals = 1
-        self.items_per_page = 50
 
         self._create_widgets()
         threading.Thread(target=self._load_data_thread, daemon=True).start()
@@ -45,11 +43,11 @@ class DictionaryEditorWindow(BaseEditorWindow):
         self.terms_nav_frame = ctk.CTkFrame(terms_frame, fg_color="transparent")
         self.terms_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
         self.terms_nav_frame.grid_columnconfigure(1, weight=1)
-        self.prev_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="< Назад", command=lambda: self.change_page_terms(-1))
+        self.prev_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="< Назад", command=lambda: self.change_page(-1))
         self.prev_terms_btn.grid(row=0, column=0)
         self.page_label_terms = ctk.CTkLabel(self.terms_nav_frame, text="Страница 1 / 1")
         self.page_label_terms.grid(row=0, column=1)
-        self.next_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="Вперед >", command=lambda: self.change_page_terms(1))
+        self.next_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="Вперед >", command=lambda: self.change_page(1))
         self.next_terms_btn.grid(row=0, column=2)
 
         # --- Вкладка "Предложения" ---
@@ -90,27 +88,27 @@ class DictionaryEditorWindow(BaseEditorWindow):
             self.after(0, messagebox.showerror, "Ошибка", f"Не удалось загрузить данные словаря: {e}")
 
     def _populate_ui(self, terms, proposals):
-        self.all_terms = sorted(terms, key=lambda x: x['english_term'].lower())
+        self.all_items = sorted(terms, key=lambda x: x['english_term'].lower())
         self.all_proposals = sorted(proposals, key=lambda x: x['english_term'].lower())
         self.term_widgets = {}
-        for term in self.all_terms:
+        for term in self.all_items:
             term['is_new'] = False
             term['is_modified'] = False
             self.term_widgets[term['english_term']] = {'eng_var': ctk.StringVar(value=term['english_term']), 'rus_var': ctk.StringVar(value=term['russian_term'])}
 
-        self.current_page_terms = 1
+        self.current_page = 1
         self.current_page_proposals = 1
         self.filter_entries()
 
     def on_tab_change(self):
         self.filter_entries()
 
-    def render_terms_page(self, terms_to_render):
+    def render_page(self, terms_to_render):
         for widget in self.terms_content_frame.winfo_children(): widget.destroy()
         ctk.CTkLabel(self.terms_content_frame, text="Английский термин", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
         ctk.CTkLabel(self.terms_content_frame, text="Русский перевод", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=5, pady=5, sticky="w")
         
-        start_index = (self.current_page_terms - 1) * self.items_per_page
+        start_index = (self.current_page - 1) * self.items_per_page
         end_index = start_index + self.items_per_page
         page_terms = terms_to_render[start_index:end_index]
 
@@ -130,9 +128,9 @@ class DictionaryEditorWindow(BaseEditorWindow):
             delete_btn.grid(row=i + 1, column=2, padx=5, pady=2)
 
         total_pages = (len(terms_to_render) + self.items_per_page - 1) // self.items_per_page
-        self.page_label_terms.configure(text=f"Страница {self.current_page_terms} / {max(1, total_pages)}")
-        self.prev_terms_btn.configure(state="normal" if self.current_page_terms > 1 else "disabled")
-        self.next_terms_btn.configure(state="normal" if self.current_page_terms < total_pages else "disabled")
+        self.page_label_terms.configure(text=f"Страница {self.current_page} / {max(1, total_pages)}")
+        self.prev_terms_btn.configure(state="normal" if self.current_page > 1 else "disabled")
+        self.next_terms_btn.configure(state="normal" if self.current_page < total_pages else "disabled")
 
     def render_proposals_page(self, proposals_to_render):
         for widget in self.proposals_content_frame.winfo_children(): widget.destroy()
@@ -160,19 +158,19 @@ class DictionaryEditorWindow(BaseEditorWindow):
         self.next_proposals_btn.configure(state="normal" if self.current_page_proposals < total_pages else "disabled")
 
     def mark_as_modified(self, original_eng):
-        term = next((t for t in self.all_terms if t['english_term'] == original_eng), None)
+        term = next((t for t in self.all_items if t['english_term'] == original_eng), None)
         if term: term['is_modified'] = True
 
     def add_new_term(self):
-        new_term_id = f"__new_{len([t for t in self.all_terms if t.get('is_new')])}"
+        new_term_id = f"__new_{len([t for t in self.all_items if t.get('is_new')])}"
         new_term = {'english_term': new_term_id, 'russian_term': '', 'category': 'other', 'is_new': True, 'is_modified': True}
-        self.all_terms.insert(0, new_term)
+        self.all_items.insert(0, new_term)
         self.term_widgets[new_term_id] = {'eng_var': ctk.StringVar(value=''), 'rus_var': ctk.StringVar(value='')}
         self.filter_entries()
 
     def save_all_terms(self):
         try:
-            for term_data in self.all_terms:
+            for term_data in self.all_items:
                 if not term_data.get('is_modified'): continue
                 
                 original_eng = term_data['english_term']
@@ -196,7 +194,7 @@ class DictionaryEditorWindow(BaseEditorWindow):
             gui_logger.error(f"Ошибка сохранения словаря: {e}", exc_info=True)
 
     def delete_term(self, original_eng):
-        self.all_terms = [t for t in self.all_terms if t['english_term'] != original_eng]
+        self.all_items = [t for t in self.all_items if t['english_term'] != original_eng]
         self.term_widgets.pop(original_eng, None)
         self.db_manager.delete_term(original_eng) # Direct delete for simplicity
         self.filter_entries()
@@ -223,23 +221,23 @@ class DictionaryEditorWindow(BaseEditorWindow):
         query = self.search_var.get().lower()
         
         # Фильтрация для Словаря
-        filtered_terms = [t for t in self.all_terms if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
-        self.current_page_terms = 1
-        self.render_terms_page(filtered_terms)
+        filtered_terms = [t for t in self.all_items if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
+        self.current_page = 1
+        self.render_page(filtered_terms)
 
         # Фильтрация для Предложений
         filtered_proposals = [p for p in self.all_proposals if query in p['english_term'].lower() or query in p['russian_term'].lower()]
         self.current_page_proposals = 1
         self.render_proposals_page(filtered_proposals)
 
-    def change_page_terms(self, delta):
+    def change_page(self, delta):
         query = self.search_var.get().lower()
-        filtered_terms = [t for t in self.all_terms if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
+        filtered_terms = [t for t in self.all_items if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
         total_pages = (len(filtered_terms) + self.items_per_page - 1) // self.items_per_page
-        new_page = self.current_page_terms + delta
+        new_page = self.current_page + delta
         if 1 <= new_page <= total_pages:
-            self.current_page_terms = new_page
-            self.render_terms_page(filtered_terms)
+            self.current_page = new_page
+            self.render_page(filtered_terms)
 
     def change_page_proposals(self, delta):
         query = self.search_var.get().lower()

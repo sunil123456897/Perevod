@@ -5,8 +5,10 @@ import logging
 import time
 import chromadb
 import google.generativeai as genai
-from agents.semantic_chunker import SemanticChunker
-from agents.reranker import Reranker
+from Perevod.agents.semantic_chunker import SemanticChunker
+from Perevod.agents.reranker import Reranker
+
+from Perevod.config import PROJECT_ROOT
 
 logger = logging.getLogger("NovelTranslator.KBManager")
 
@@ -17,16 +19,16 @@ class KnowledgeBaseManager:
         self.api_key = api_key
         self.embedding_model_name = embedding_model_name
         
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.chroma_path = os.path.join(script_dir, '..', '_project_files', project_name, 'chroma_db')
+        self.chroma_path = os.path.join(PROJECT_ROOT, '_project_files', project_name, 'chroma_db')
         os.makedirs(self.chroma_path, exist_ok=True)
 
         self.client = chromadb.PersistentClient(path=self.chroma_path)
         
         if self.api_key:
+            os.environ['CHROMA_GOOGLE_GENAI_API_KEY'] = self.api_key
             genai.configure(api_key=self.api_key)
             self.embedding_function = chromadb.utils.embedding_functions.GoogleGenerativeAiEmbeddingFunction(
-                api_key=self.api_key, model_name=self.embedding_model_name
+                model_name=self.embedding_model_name
             )
         else:
             self.embedding_function = None

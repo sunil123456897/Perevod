@@ -23,7 +23,7 @@ def router_after_initialization(state: AgentState) -> str:
     return constants.PROCESS_ALL_CHAPTERS if state.get("chapters_to_process") else constants.END
 
 def router_after_qa(state: AgentState) -> str:
-    """Решает, нужн�� ли запускать конвейер исправлений после контроля качества."""
+    """Решает, нужн ли запускать конвейер исправлений после контроля качества."""
     report = state.get("quality_assurance_report")
     if not report or not report.get("inconsistencies"):
         logger.info("Контроль качества не выявил проблем. Завершение работы.")

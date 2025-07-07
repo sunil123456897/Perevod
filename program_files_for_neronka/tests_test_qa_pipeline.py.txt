@@ -1,5 +1,3 @@
-
-
 import unittest
 import unittest
 from unittest.mock import MagicMock, patch
@@ -9,8 +7,8 @@ import json
 
 
 
-from src.Perevod.agents.state import AgentState
-from src.Perevod.agents.nodes import evaluation_node, apply_fixes_node
+from Perevod.agents.state import AgentState
+from Perevod.agents.nodes import evaluation_node, apply_fixes_node
 
 class TestQAPipeline(unittest.TestCase):
 
@@ -145,4 +143,3 @@ class TestQAPipeline(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

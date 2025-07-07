@@ -28,4 +28,4 @@ class AgentState(TypedDict):
     quality_assurance_report: Dict[str, Any] | None
     
     # [ИЗМЕНЕНО] Список вердиктов от "Коллегии Судей" для пакетного исправления
-    unification_verdicts: Annotated[list, add]
+    unification_verdicts: list

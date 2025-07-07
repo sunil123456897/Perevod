@@ -2,7 +2,7 @@
 
 import pytest
 from Perevod.agents.semantic_chunker import SemanticChunker
-from src.Perevod.agents.reranker import Reranker
+from Perevod.agents.reranker import Reranker
 
 @pytest.fixture(scope="module")
 def chunker():
@@ -22,7 +22,7 @@ def test_chunker_small_text(chunker):
 
 def test_chunker_long_paragraph(chunker):
     text = "This is a long sentence that should be split into multiple chunks based on the max_chunk_size parameter. It has several sentences. This is the second one. And this is the third one, just to be sure."
-    chunks = chunker.chunk(text)
+    chunks = chunker.chunk(text);
     assert len(chunks) > 1
     for chunk in chunks:
         assert len(chunk) <= 150

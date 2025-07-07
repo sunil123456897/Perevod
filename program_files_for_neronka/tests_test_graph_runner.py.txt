@@ -1,4 +1,3 @@
-
 import unittest
 from unittest.mock import patch, MagicMock
 import os
@@ -9,16 +8,16 @@ import shutil
 # Mock the environment variable before other imports
 os.environ['GOOGLE_API_KEY'] = 'test_api_key'
 
-from src.Perevod.graph_runner import run_translation_workflow
+from Perevod.graph_runner import run_translation_workflow
 from Perevod.agents.state import AgentState
 from Perevod.config import DEFAULT_SETTINGS
 
 class TestGraphRunner(unittest.TestCase):
 
-    @patch('src.Perevod.graph_runner.DatabaseManager')
-    @patch('Perevod.graph_runner.KnowledgeBaseManager')
+    @patch('Perevod.database.database_manager.DatabaseManager')
+    @patch('Perevod.knowledge_base.knowledge_base_manager.KnowledgeBaseManager')
     @patch('google.generativeai.GenerativeModel')
-    def test_full_graph_execution(self, mock_db_manager, mock_kb_manager, mock_genai_model):
+    def test_full_graph_execution(self, mock_genai_model, mock_kb_manager, mock_db_manager):
         """
         Тестирует полный прогон графа с моками зависимостей.
         Проверяет, что граф успешно доходит до конца без ошибок.

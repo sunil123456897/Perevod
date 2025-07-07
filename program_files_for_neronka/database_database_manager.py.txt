@@ -5,6 +5,7 @@ import logging
 from contextlib import contextmanager
 from Perevod.database.models import (Project, Term, WorldBibleEntry, DictionaryProposal, 
                      WorldBibleProposal, get_engine_and_session)
+from Perevod.config import PROJECT_ROOT
 
 logger = logging.getLogger("NovelTranslator.DBManager")
 
@@ -12,7 +13,7 @@ class DatabaseManager:
     def __init__(self, project_name):
         self.project_name = project_name
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.db_path = os.path.join(script_dir, '..', '..', '..', '_project_files', 'projects_main.db')
+        self.db_path = os.path.join(PROJECT_ROOT, '_project_files', 'projects_main.db')
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.engine, self.Session = get_engine_and_session(self.db_path)
         self.project_id = self._get_or_create_project_id()
@@ -62,8 +63,7 @@ class DatabaseManager:
                 alias = s.query(Term).filter_by(project_id=self.project_id, english_term=alias_eng).first()
                 if alias:
                     # If primary term doesn't have a Russian translation, use alias's
-                    if not primary.russian_term and alias.russian_term:
-                        primary.russian_term = alias.russian_term
+                    if not primary.russian_term and alias.russian_term: primary.russian_term = alias.russian_term
                     s.delete(alias)
             return True
 
@@ -138,14 +138,6 @@ class DatabaseManager:
                 "category": p.category,
                 "description": p.description
             } for p in s.query(WorldBibleProposal).filter_by(project_id=self.project_id).all()}
-
-    def count_world_bible_proposals(self):
-        with self.session_scope() as s:
-            return s.query(WorldBibleProposal).filter_by(project_id=self.project_id).count()
-
-    def count_world_bible_proposals(self):
-        with self.session_scope() as s:
-            return s.query(WorldBibleProposal).filter_by(project_id=self.project_id).count()
 
     def count_world_bible_proposals(self):
         with self.session_scope() as s:

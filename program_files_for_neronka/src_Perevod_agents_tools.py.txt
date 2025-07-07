@@ -91,19 +91,7 @@ def tool_analyze_inconsistencies(processed_texts: List[Dict[str, str]], dictiona
             logger.debug(f"Английский текст (начало): {eng_text[:200]}...")
             logger.debug(f"Русский текст (начало): {rus_text[:200]}...")
 
-            prompt = f"""Given the following English text and its Russian translation, identify significant English terms and their corresponding Russian translations. Focus on proper nouns, unique concepts, and recurring thematic elements. Return a JSON array of objects, each with 'english_term' and 'russian_translation'.
-
-English Text:
----
-{eng_text}
----
-
-Russian Translation:
----
-{rus_text}
----
-
-JSON Output:"""
+            prompt = f"""Given the following English text and its Russian translation, identify significant English terms and their corresponding Russian translations. Focus on proper nouns, unique concepts, and recurring thematic elements. Return a JSON array of objects, each with 'english_term' and 'russian_translation'.\n\nEnglish Text:\n---\n{eng_text}\n---\n\nRussian Translation:\n---\n{rus_text}\n---\n\nJSON Output:"""
             
             logger.debug(f"Промпт для LLM (анализ несоответствий): {prompt[:500]}...")
             llm_response = tool_translate_chunk(model, prompt, settings)
@@ -157,15 +145,7 @@ def tool_evaluate_inconsistency(issue: Dict[str, Any], dictionary: Dict[str, Any
         logger.info(f"Вердикт для '{eng_term}' вынесен по словарю: '{correct_variant}' является каноничным.")
         return {"action": constants.UNIFY_ACTION, "english_term": eng_term, "correct_variant": correct_variant, "reason": "dictionary_match"}
             
-    prompt = f"""# ROLE: Linguistic Arbiter
-# TASK: You are given an English term and several Russian translation variants found in a text. Your task is to choose the single best, most contextually appropriate, and stylistically correct translation.
-# ENGLISH TERM: "{eng_term}"
-# RUSSIAN VARIANTS: {json.dumps(variants, ensure_ascii=False)}
-# INSTRUCTIONS:
-1. Analyze the variants.
-2. Choose the one that is most likely to be the correct, canonical translation.
-3. Return ONLY the chosen variant, and nothing else.
-# BEST TRANSLATION:"""
+    prompt = f"""# ROLE: Linguistic Arbiter\n# TASK: You are given an English term and several Russian translation variants found in a text. Your task is to choose the single best, most contextually appropriate, and stylistically correct translation.\n# ENGLISH TERM: "{eng_term}"\n# RUSSIAN VARIANTS: {json.dumps(variants, ensure_ascii=False)}\n# INSTRUCTIONS:\n1. Analyze the variants.\n2. Choose the one that is most likely to be the correct, canonical translation.\n3. Return ONLY the chosen variant, and nothing else.\n# BEST TRANSLATION:"""
     
     llm_response_raw = tool_translate_chunk(model, prompt, settings)
     llm_response_cleaned = clean_translation_output(llm_response_raw)
@@ -278,6 +258,12 @@ def tool_apply_unification_batch(verdicts: List[Dict[str, Any]], processed_chapt
                 
                 # Функция для замены, которая сохраняет регистр первой буквы
                 def replace_with_case(match):
+                    old_word = match.group(1) # Используем группу 1, т.к. весь паттерн теперь r'\b(...)\b'
+                    if old_word[0].isupper():
+                        # Если первая буква заглавная, делаем заглавной и первую букву нового слова
+                        return new.capitalize()
+                    # Дополнительно можно проверить old_word.istitle() или old_word.isupper()
+                    # для более сложной логики, но capitalize покрывает 99% случаев.
                     return new
 
                 modified_text, count = re.subn(pattern, replace_with_case, modified_text, flags=re.UNICODE | re.IGNORECASE)
@@ -319,28 +305,7 @@ def tool_generate_dictionary_proposals(eng_text: str, rus_text: str, db_manager,
     existing_terms = db_manager.get_terms_dictionary()
     existing_proposals = db_manager.get_dictionary_proposals()
 
-    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant terms (e.g., unique names, magical spells, specific techniques, key concepts) that should be added to a specialized dictionary. For each identified term, provide its English form, its most likely Russian translation, and a category (e.g., 'character', 'place', 'magic', 'item', 'concept', 'technique', 'other').
-    
-If no such significant terms are found, respond with 'NO_TERMS'.
-
-Format your response as a JSON array of objects. Example:
-[
-  {{
-    "term": "Mana Flow",
-    "translation": "Поток Маны",
-    "category": "magic"
-  }},
-  {{
-    "term": "Shadow Step",
-    "translation": "Теневой Шаг",
-    "category": "technique"
-  }}
-]
-
-Text to analyze:
----
-{eng_text}
----"""
+    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant terms (e.g., unique names, magical spells, specific techniques, key concepts) that should be added to a specialized dictionary. For each identified term, provide its English form, its most likely Russian translation, and a category (e.g., 'character', 'place', 'magic', 'item', 'concept', 'technique', 'other').\n    \nIf no such significant terms are found, respond with 'NO_TERMS'.\n\nFormat your response as a JSON array of objects. Example:\n[\n  {{\n    "term": "Mana Flow",\n    "translation": "Поток Маны",\n    "category": "magic"\n  }},\n  {{\n    "term": "Shadow Step",\n    "translation": "Теневой Шаг",\n    "category": "technique"\n  }}\n]\n\nText to analyze:\n---\n{eng_text}\n---"""
     
     try:
         llm_response = tool_translate_chunk(model, prompt, settings)
@@ -380,30 +345,7 @@ def tool_generate_world_bible_proposals(eng_text: str, rus_text: str, db_manager
     logger.info("Генерация предложений для Библии Вселенной...")
     
     # Промпт для извлечения сущностей и их описаний
-    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant entities (characters, places, magical items, unique concepts, organizations) that should be added to a "World Bible" (a compendium of lore). For each identified entity, provide its English name, a concise English description, its most likely Russian name, and a category (e.g., 'character', 'place', 'artifact', 'concept', 'organization').
-
-If no significant entities are found, respond with 'NO_ENTITIES'.
-
-Format your response as a JSON array of objects. Example:
-[
-  {{
-    "english_name": "Eldoria",
-    "english_description": "An ancient elven city known for its crystal spires and magical academies.",
-    "russian_name": "Элдория",
-    "category": "place"
-  }},
-  {{
-    "english_name": "Shadowblade",
-    "english_description": "A legendary dagger imbued with the essence of night, capable of piercing any armor.",
-    "russian_name": "Теневой Клинок",
-    "category": "artifact"
-  }}
-]
-
-Text to analyze:
----
-{eng_text}
----"""
+    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant entities (characters, places, magical items, unique concepts, organizations) that should be added to a "World Bible" (a compendium of lore). For each identified entity, provide its English name, a concise English description, its most likely Russian name, and a category (e.g., 'character', 'place', 'artifact', 'concept', 'organization').\n\nIf no significant entities are found, respond with 'NO_ENTITIES'.\n\nFormat your response as a JSON array of objects. Example:\n[\n  {{\n    "english_name": "Eldoria",\n    "english_description": "An ancient elven city known for its crystal spires and magical academies.",\n    "russian_name": "Элдория",\n    "category": "place"\n  }},\n  {{\n    "english_name": "Shadowblade",\n    "english_description": "A legendary dagger imbued with the essence of night, capable of piercing any armor.",\n    "russian_name": "Теневой Клинок",\n    "category": "artifact"\n  }}\n]\n\nText to analyze:\n---\n{eng_text}\n---"""
     try:
         llm_response = tool_translate_chunk(model, prompt, settings)
         response_json = clean_translation_output(llm_response)
@@ -440,4 +382,3 @@ Text to analyze:
         logger.error(f"Ошибка парсинга JSON от LLM для Библии Вселенной: {e}. Ответ: {llm_response}", exc_info=True)
     except Exception as e:
         logger.error(f"Ошибка при генерации предложения Библии Вселенной: {e}", exc_info=True)
-

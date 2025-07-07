@@ -7,7 +7,7 @@ import threading
 import logging
 from Perevod.graph_runner import run_translation_workflow
 from Perevod.project_manager import ProjectManager
-from Perevod.config import DEFAULT_SETTINGS, AVAILABLE_MODELS
+from Perevod.config import DEFAULT_SETTINGS, AVAILABLE_MODELS, PROJECT_ROOT
 from Perevod.database.database_manager import DatabaseManager
 from Perevod.knowledge_base.knowledge_base_manager import KnowledgeBaseManager
 from Perevod.agents.translator import simple_translate
@@ -219,14 +219,16 @@ class TranslatorGUI(ctk.CTk):
     def open_project_data_folder(self):
         project_name = self.settings_vars['project_name'].get()
         if project_name == "Default": messagebox.showinfo("Информация", "У проекта 'Default' нет своей папки данных."); return
-        path = os.path.join('_project_files', project_name); os.makedirs(path, exist_ok=True)
+        path = os.path.join(PROJECT_ROOT, '_project_files', project_name); os.makedirs(path, exist_ok=True)
         try: os.startfile(path)
         except AttributeError: import subprocess; subprocess.run(['xdg-open', path])
 
     def initialize_translator_gui(self):
         self.update_progress(0, "Инициализация..."); threading.Thread(target=self._initialize_thread, daemon=True).start()
 
-    def _initialize_thread(self):
+    def _initialize_thread(
+        self,
+    ):
         """
         Инициализирует менеджеры баз данных и знаний в отдельном потоке,
         чтобы не блокировать графический интерфейс.
@@ -235,39 +237,72 @@ class TranslatorGUI(ctk.CTk):
             project_name = self.settings_vars['project_name'].get()
             if project_name == "Default":
                 self.update_progress(100, "Выберите или создайте проект для начала работы.")
-                for btn in [self.start_button, self.dict_button, self.bible_button, self.build_index_button]: btn.configure(state=ctk.DISABLED)
+                for btn in [
+                    self.start_button,
+                    self.dict_button,
+                    self.bible_button,
+                    self.build_index_button,
+                ]:
+                    btn.configure(state=ctk.DISABLED)
                 return
             self.db_manager = DatabaseManager(project_name)
-            self.kb_manager = KnowledgeBaseManager(project_name, self.settings_vars['api_key'].get(), self.settings_vars['embedding_model_name'].get())
+            self.kb_manager = KnowledgeBaseManager(
+                project_name,
+                self.settings_vars['api_key'].get(),
+                self.settings_vars['embedding_model_name'].get(),
+            )
             self.after(0, self.update_index_status)
             self.update_progress(100, "Инициализация завершена. Готов к переводу.")
-            for btn in [self.start_button, self.dict_button, self.bible_button, self.build_index_button]: btn.configure(state=ctk.NORMAL)
+            for btn in [
+                self.start_button,
+                self.dict_button,
+                self.bible_button,
+                self.build_index_button,
+            ]:
+                btn.configure(state=ctk.NORMAL)
         except Exception as e:
-            gui_logger.error(f"Ошибка инициализации: {e}", exc_info=True); self.update_progress(0, f"Ошибка инициализации: {e}")
+            gui_logger.error(f"Ошибка инициализации: {e}", exc_info=True)
+            self.update_progress(0, f"Ошибка инициализации: {e}")
 
     def update_index_status(self):
-        if self.kb_manager and self.kb_manager.collection: self.index_status_label.configure(text=f"Индекс: {self.kb_manager.collection.count()} записей")
-        else: self.index_status_label.configure(text="Индекс: Н/Д")
+        if self.kb_manager and self.kb_manager.collection:
+            self.index_status_label.configure(
+                text=f"Индекс: {self.kb_manager.collection.count()} записей"
+            )
+        else:
+            self.index_status_label.configure(text="Индекс: Н/Д")
 
     def build_semantic_index_gui(self):
-        if messagebox.askyesno("Подтверждение", "Перестроить семантический индекс? Это может занять время и токены API."):
-            self.update_progress(0, "Начало перестройки индекса..."); threading.Thread(target=self._build_index_thread, daemon=True).start()
+        if messagebox.askyesno(
+            "Подтверждение", "Перестроить семантический индекс? Это может занять время и токены API."
+        ):
+            self.update_progress(0, "Начало перестройки индекса...")
+            threading.Thread(target=self._build_index_thread, daemon=True).start()
 
     def _build_index_thread(self):
         """
         Выполняет перестроение семантического индекса в отдельном потоке.
         """
         try:
-            self.kb_manager.rebuild_index_from_db(self.db_manager, progress_callback=self.update_progress)
+            self.kb_manager.rebuild_index_from_db(
+                self.db_manager, progress_callback=self.update_progress
+            )
             self.after(0, self.update_index_status)
         except Exception as e:
-            gui_logger.error(f"Ошибка построения индекса: {e}", exc_info=True); self.update_progress(0, f"Ошибка индексации: {e}")
+            gui_logger.error(f"Ошибка построения индекса: {e}", exc_info=True)
+            self.update_progress(0, f"Ошибка индексации: {e}")
 
     def start_translation(self):
-        if self.translation_running: gui_logger.warning("Остановка перевода еще не реализована."); return
+        if self.translation_running:
+            gui_logger.warning("Остановка перевода еще не реализована.")
+            return
         settings = self.get_current_settings_from_ui()
         if not all([settings.get('api_key'), settings.get('input_dir'), settings.get('output_dir')]):
-            messagebox.showerror("Ошибка", "Пожалуйста, заполните API ключ и обе директории на вкладке 'Основное'."); return
+            messagebox.showerror(
+                "Ошибка",
+                "Пожалуйста, заполните API ключ и обе директории на вкладке 'Основное'.",
+            )
+            return
         threading.Thread(target=self._translation_thread, daemon=True).start()
 
     def _translation_thread(self):
@@ -275,29 +310,49 @@ class TranslatorGUI(ctk.CTk):
         Запускает полный цикл перевода в отдельном потоке,
         обрабатывая возможные ошибки и обновляя GUI.
         """
-        self.translation_running = True; self.after(0, self.update_ui_for_translation_state, True)
+        self.translation_running = True
+        self.after(0, self.update_ui_for_translation_state, True)
         try:
             settings = self.get_current_settings_from_ui()
             import google.generativeai as genai
+
             genai.configure(api_key=settings.get('api_key'))
             model = genai.GenerativeModel(settings.get('model_name'))
-            final_state = run_translation_workflow(settings, self.db_manager, self.kb_manager, model, self.update_progress)
+            final_state = run_translation_workflow(
+                settings, self.db_manager, self.kb_manager, model, self.update_progress
+            )
             if final_state.get("error"): raise Exception(final_state["error"])
-            self.update_progress(100, f"Перевод и аудит успешно завершены! Обработано глав: {len(final_state.get('processed_chapters', []))}")
+            self.update_progress(
+                100,
+                f"Перевод и аудит успешно завершены! Обработано глав: {len(final_state.get('processed_chapters', []))}",
+            )
             gui_logger.info("Полный цикл перевода и аудита успешно завершен.")
         except Exception as e:
-            error_message = f"Критическая ошибка в графе: {e}"; gui_logger.error(error_message, exc_info=True)
-            self.after(0, self.update_progress, 0, f"Ошибка: {e}"); self.after(0, messagebox.showerror, "Ошибка Перевода", error_message)
+            error_message = f"Критическая ошибка в графе: {e}"
+            gui_logger.error(error_message, exc_info=True)
+            self.after(0, self.update_progress, 0, f"Ошибка: {e}")
+            self.after(0, messagebox.showerror, "Ошибка Перевода", error_message)
         finally:
-            self.translation_running = False; self.after(0, self.update_ui_for_translation_state, False)
+            self.translation_running = False
+            self.after(0, self.update_ui_for_translation_state, False)
 
     def open_dictionary_editor(self):
-        if self.db_manager: DictionaryEditorWindow(self, self.db_manager)
-        else: messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
+        if self.db_manager:
+            DictionaryEditorWindow(self, self.db_manager)
+        else:
+            messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
 
     def open_bible_editor(self):
-        if self.db_manager: WorldBibleEditorWindow(self, self.db_manager, self.settings_vars['api_key'].get(), self.settings_vars['model_name'].get())
-        else: messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
+        if self.db_manager:
+            WorldBibleEditorWindow(
+                self,
+                self.db_manager,
+                self.settings_vars['api_key'].get(),
+                self.settings_vars['model_name'].get(),
+            )
+        else:
+            messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
+
 
 if __name__ == '__main__':
     app = TranslatorGUI()

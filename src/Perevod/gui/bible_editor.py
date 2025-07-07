@@ -2,64 +2,60 @@ import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import logging
-from Perevod.gui.base_editor_window import BaseEditorWindow
+from .paginated_editor import PaginatedEditorWindow
 from Perevod.agents.translator import simple_translate
 
 gui_logger = logging.getLogger("NovelTranslator.GUI")
 
-class WorldBibleEditorWindow(BaseEditorWindow):
+class WorldBibleEditorWindow(PaginatedEditorWindow):
     def __init__(self, master, db_manager, api_key, model_name):
-        super().__init__(master, "Редактор Библии Вселенной", "1200x800")
-        self.db_manager = db_manager
+        super().__init__(master, "Редактор Библии Вселенной", db_manager)
         self.api_key = api_key
         self.model_name = model_name
-        self.all_entries = []
         self.all_proposals = []
         self.entry_widgets = {}
-        self.current_page_entries = 1
         self.current_page_proposals = 1
-        self.items_per_page = 10
+        self.search_var = ctk.StringVar()
+        self.search_var.trace_add("write", self.load_data) # Trigger data reload on search
 
-        self._create_widgets()
-        threading.Thread(target=self._load_data_thread, daemon=True).start()
+        self.create_widgets() # Call the overridden method
 
-    def _create_widgets(self):
+    def create_widgets(self):
+        # Create a tab view for Bible and Proposals
+        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view.pack(expand=True, fill="both", padx=10, pady=10)
         self.tab_view.add("Библия")
         self.tab_view.add("Предложения")
         self.tab_view.set("Библия")
         self.tab_view.configure(command=self.on_tab_change)
 
-        # --- Вкладка "Библия" ---
-        entries_frame = self.tab_view.tab("Библия")
-        entries_frame.grid_columnconfigure(0, weight=1); entries_frame.grid_rowconfigure(1, weight=1)
-        
-        entries_controls = ctk.CTkFrame(entries_frame, fg_color="transparent")
-        entries_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        entries_controls.grid_columnconfigure(1, weight=1)
-        self.add_entry_btn = ctk.CTkButton(entries_controls, text="Добавить новую запись", command=self.add_new_entry)
-        self.add_entry_btn.grid(row=0, column=0, padx=(0,5))
-        self.save_entries_btn = ctk.CTkButton(entries_controls, text="Сохранить все изменения", command=self.save_all_entries, fg_color="#2E7D32", hover_color="#1B5E20")
-        self.save_entries_btn.grid(row=0, column=2, padx=(5,0))
+        # --- Bible Tab ---
+        entries_tab = self.tab_view.tab("Библия")
+        entries_tab.grid_columnconfigure(0, weight=1)
+        entries_tab.grid_rowconfigure(2, weight=1) # Row for scrollable frame
 
-        self.entries_content_frame = ctk.CTkScrollableFrame(entries_frame, label_text="Принятые записи")
-        self.entries_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        # Search and Add/Save controls
+        entries_controls_frame = ctk.CTkFrame(entries_tab, fg_color="transparent")
+        entries_controls_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        entries_controls_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkEntry(entries_controls_frame, textvariable=self.search_var, placeholder_text="Поиск...").grid(row=0, column=0, padx=(0,5), sticky="ew")
+        ctk.CTkButton(entries_controls_frame, text="Добавить новую запись", command=self.add_new_entry).grid(row=0, column=2, padx=(0,5))
+        ctk.CTkButton(entries_controls_frame, text="Сохранить все изменения", command=self.save_all_entries, fg_color="#2E7D32", hover_color="#1B5E20").grid(row=0, column=3, padx=(5,0))
+
+        # Pagination for Bible tab (from PaginatedEditorWindow)
+        self.pagination_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5) # Reposition pagination frame
+
+        self.entries_content_frame = ctk.CTkScrollableFrame(entries_tab, label_text="Принятые записи")
+        self.entries_content_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
         self.entries_content_frame.grid_columnconfigure(0, weight=1)
 
-        self.entries_nav_frame = ctk.CTkFrame(entries_frame, fg_color="transparent")
-        self.entries_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        self.entries_nav_frame.grid_columnconfigure(1, weight=1)
-        self.prev_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="< Назад", command=lambda: self.change_page_entries(-1))
-        self.prev_entries_btn.grid(row=0, column=0)
-        self.page_label_entries = ctk.CTkLabel(self.entries_nav_frame, text="Страница 1 / 1")
-        self.page_label_entries.grid(row=0, column=1)
-        self.next_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="Вперед >", command=lambda: self.change_page_entries(1))
-        self.next_entries_btn.grid(row=0, column=2)
+        # --- Proposals Tab ---
+        proposals_tab = self.tab_view.tab("Предложения")
+        proposals_tab.grid_columnconfigure(0, weight=1)
+        proposals_tab.grid_rowconfigure(1, weight=1)
 
-        # --- Вкладка "Предложения" ---
-        proposals_frame = self.tab_view.tab("Предложения")
-        proposals_frame.grid_columnconfigure(0, weight=1); proposals_frame.grid_rowconfigure(1, weight=1)
-
-        proposals_controls = ctk.CTkFrame(proposals_frame, fg_color="transparent")
+        proposals_controls = ctk.CTkFrame(proposals_tab, fg_color="transparent")
         proposals_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         proposals_controls.grid_columnconfigure(1, weight=1)
         self.accept_all_prop_btn = ctk.CTkButton(proposals_controls, text="✓ Принять все", command=self.accept_all_proposals, fg_color="#2E7D32", hover_color="#1B5E20")
@@ -67,11 +63,11 @@ class WorldBibleEditorWindow(BaseEditorWindow):
         self.reject_all_prop_btn = ctk.CTkButton(proposals_controls, text="✗ Отклонить все", command=self.reject_all_proposals, fg_color="#D32F2F", hover_color="#B71C1C")
         self.reject_all_prop_btn.grid(row=0, column=2, padx=(5,0))
 
-        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_frame, label_text="Предложения от ИИ")
+        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_tab, label_text="Предложения от ИИ")
         self.proposals_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
         self.proposals_content_frame.grid_columnconfigure(0, weight=1)
 
-        self.proposals_nav_frame = ctk.CTkFrame(proposals_frame, fg_color="transparent")
+        self.proposals_nav_frame = ctk.CTkFrame(proposals_tab, fg_color="transparent")
         self.proposals_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
         self.proposals_nav_frame.grid_columnconfigure(1, weight=1)
         self.prev_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="< Назад", command=lambda: self.change_page_proposals(-1))
@@ -81,22 +77,16 @@ class WorldBibleEditorWindow(BaseEditorWindow):
         self.next_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="Вперед >", command=lambda: self.change_page_proposals(1))
         self.next_proposals_btn.grid(row=0, column=2)
 
-        self._create_action_buttons([{"text": "Закрыть", "command": self.destroy}])
+        # Initial data load
+        self.load_data()
 
-    def _load_data_thread(self):
-        try:
-            db_entries = self.db_manager.get_all_world_bible_entries()
-            db_proposals = list(self.db_manager.get_world_bible_proposals().values())
-            self.after(0, self._populate_ui, db_entries, db_proposals)
-        except Exception as e:
-            gui_logger.error(f"Ошибка загрузки данных Библии: {e}", exc_info=True)
-            self.after(0, messagebox.showerror, "Ошибка", f"Не удалось загрузить данные Библии: {e}")
-
-    def _populate_ui(self, entries, proposals):
-        self.all_entries = sorted(entries, key=lambda x: x['english_name'].lower())
-        self.all_proposals = sorted(proposals, key=lambda x: x['english_name'].lower())
+    def load_data(self, *args):
+        # Load entries
+        query = self.search_var.get().lower()
+        all_entries = self.db_manager.get_all_world_bible_entries()
+        self.all_items = sorted(all_entries, key=lambda x: x['english_name'].lower())
         self.entry_widgets = {}
-        for entry in self.all_entries:
+        for entry in self.all_items:
             entry['is_new'] = False
             entry['is_modified'] = False
             self.entry_widgets[entry['english_name']] = {
@@ -106,27 +96,38 @@ class WorldBibleEditorWindow(BaseEditorWindow):
                 'desc_eng_text': entry.get('description', ''),
                 'desc_rus_text': entry.get('russian_description', '')
             }
-        self.current_page_entries = 1
-        self.current_page_proposals = 1
-        self.filter_entries()
 
-    def on_tab_change(self):
-        self.filter_entries()
+        # Filter entries based on search query
+        self.filtered_items = [e for e in self.all_items if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
+        self.total_items = len(self.filtered_items)
+        self.current_page = 0 # Reset to first page on data load/filter
+        self.update_pagination_info()
+        self.display_page()
 
-    def render_entries_page(self, entries_to_render):
-        for widget in self.entries_content_frame.winfo_children(): widget.destroy()
+        # Load proposals (separate from paginated entries)
+        all_proposals = list(self.db_manager.get_world_bible_proposals().values())
+        self.all_proposals = sorted(all_proposals, key=lambda x: x['english_name'].lower())
+        self.render_proposals_page(self.all_proposals) # Render all proposals, pagination handled internally
+
+    def display_page(self):
+        # This method is called by PaginatedEditorWindow to display the current page of entries
+        for widget in self.entries_content_frame.winfo_children():
+            widget.destroy()
         
-        start_index = (self.current_page_entries - 1) * self.items_per_page
+        start_index = self.current_page * self.items_per_page
         end_index = start_index + self.items_per_page
-        page_entries = entries_to_render[start_index:end_index]
+        page_entries = self.filtered_items[start_index:end_index]
 
         for i, entry_data in enumerate(page_entries):
             self.create_entry_widget(entry_data, i)
 
-        total_pages = (len(entries_to_render) + self.items_per_page - 1) // self.items_per_page
-        self.page_label_entries.configure(text=f"Страница {self.current_page_entries} / {max(1, total_pages)}")
-        self.prev_entries_btn.configure(state="normal" if self.current_page_entries > 1 else "disabled")
-        self.next_entries_btn.configure(state="normal" if self.current_page_entries < total_pages else "disabled")
+    def on_tab_change(self):
+        # When tab changes, ensure pagination info is updated for the active tab
+        if self.tab_view.get() == "Библия":
+            self.update_pagination_info()
+        elif self.tab_view.get() == "Предложения":
+            # Proposals tab has its own pagination logic
+            pass
 
     def create_entry_widget(self, entry_data, index):
         original_eng = entry_data['english_name']

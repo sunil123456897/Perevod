@@ -7,9 +7,9 @@ import sys
 # Добавляем корневую директорию в путь, чтобы импортировать модули приложения
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from database.database_manager import DatabaseManager
-from knowledge_base.knowledge_base_manager import KnowledgeBaseManager
-from config import DEFAULT_SETTINGS, setup_logging
+from Perevod.database.database_manager import DatabaseManager
+from Perevod.knowledge_base.knowledge_base_manager import KnowledgeBaseManager
+from Perevod.config import DEFAULT_SETTINGS, setup_logging
 
 def migrate_project(project_name, project_config, base_dir):
     """Мигрирует один проект из JSON в SQLite и ChromaDB."""

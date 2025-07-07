@@ -9,16 +9,144 @@ gui_logger = logging.getLogger("NovelTranslator.GUI")
 
 class DictionaryEditorWindow(PaginatedEditorWindow):
     def __init__(self, master, db_manager):
-        super().__init__(master, "Редактор Словаря")
-        self.db_manager = db_manager
+        super().__init__(master, "Редактор Словаря", db_manager)
         self.all_proposals = []
         self.term_widgets = {}
         self.current_page_proposals = 1
+        self.search_var = ctk.StringVar()
+        self.search_var.trace_add("write", self.load_data) # Trigger data reload on search
 
-        self._create_widgets()
-        threading.Thread(target=self._load_data_thread, daemon=True).start()
+        self.create_widgets() # Call the overridden method
 
-    def _create_widgets(self):
+    def create_widgets(self):
+        # Create a tab view for Dictionary and Proposals
+        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view.pack(expand=True, fill="both", padx=10, pady=10)
+        self.tab_view.add("Словарь")
+        self.tab_view.add("Предложения")
+        self.tab_view.set("Словарь")
+        self.tab_view.configure(command=self.on_tab_change)
+
+        # --- Dictionary Tab ---
+        terms_tab = self.tab_view.tab("Словарь")
+        terms_tab.grid_columnconfigure(0, weight=1)
+        terms_tab.grid_rowconfigure(2, weight=1) # Row for scrollable frame
+
+        # Search and Add/Save controls
+        terms_controls_frame = ctk.CTkFrame(terms_tab, fg_color="transparent")
+        terms_controls_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        terms_controls_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkEntry(terms_controls_frame, textvariable=self.search_var, placeholder_text="Поиск...").grid(row=0, column=0, padx=(0,5), sticky="ew")
+        ctk.CTkButton(terms_controls_frame, text="Добавить новый термин", command=self.add_new_term).grid(row=0, column=2, padx=(0,5))
+        ctk.CTkButton(terms_controls_frame, text="Сохранить все изменения", command=self.save_all_terms, fg_color="#2E7D32", hover_color="#1B5E20").grid(row=0, column=3, padx=(5,0))
+
+        # Pagination for Dictionary tab (from PaginatedEditorWindow)
+        self.pagination_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5) # Reposition pagination frame
+
+        self.terms_content_frame = ctk.CTkScrollableFrame(terms_tab, label_text="Принятые термины")
+        self.terms_content_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
+        self.terms_content_frame.grid_columnconfigure((0, 1), weight=1)
+
+        # --- Proposals Tab ---
+        proposals_tab = self.tab_view.tab("Предложения")
+        proposals_tab.grid_columnconfigure(0, weight=1)
+        proposals_tab.grid_rowconfigure(1, weight=1)
+
+        proposals_controls = ctk.CTkFrame(proposals_tab, fg_color="transparent")
+        proposals_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        proposals_controls.grid_columnconfigure(1, weight=1)
+        self.accept_all_btn = ctk.CTkButton(proposals_controls, text="✓ Принять все", command=self.accept_all_proposals, fg_color="#2E7D32", hover_color="#1B5E20")
+        self.accept_all_btn.grid(row=0, column=0, padx=(0,5))
+        self.reject_all_btn = ctk.CTkButton(proposals_controls, text="✗ Отклонить все", command=self.reject_all_proposals, fg_color="#D32F2F", hover_color="#B71C1C")
+        self.reject_all_btn.grid(row=0, column=2, padx=(5,0))
+
+        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_tab, label_text="Предложения от ИИ")
+        self.proposals_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.proposals_content_frame.grid_columnconfigure(0, weight=1)
+
+        self.proposals_nav_frame = ctk.CTkFrame(proposals_tab, fg_color="transparent")
+        self.proposals_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.proposals_nav_frame.grid_columnconfigure(1, weight=1)
+        self.prev_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="< Назад", command=lambda: self.change_page_proposals(-1))
+        self.prev_proposals_btn.grid(row=0, column=0)
+        self.page_label_proposals = ctk.CTkLabel(self.proposals_nav_frame, text="Страница 1 / 1")
+        self.page_label_proposals.grid(row=0, column=1)
+        self.next_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="Вперед >", command=lambda: self.change_page_proposals(1))
+        self.next_proposals_btn.grid(row=0, column=2)
+
+        # Initial data load
+        self.load_data()
+
+    def load_data(self, *args):
+        # Load terms
+        query = self.search_var.get().lower()
+        all_terms = self.db_manager.get_all_terms()
+        self.all_items = sorted(all_terms, key=lambda x: x['english_term'].lower())
+        self.term_widgets = {}
+        for term in self.all_items:
+            term['is_new'] = False
+            term['is_modified'] = False
+            self.term_widgets[term['english_term']] = {'eng_var': ctk.StringVar(value=term['english_term']), 'rus_var': ctk.StringVar(value=term['russian_term'])}
+
+        # Filter terms based on search query
+        self.filtered_items = [t for t in self.all_items if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
+        self.total_items = len(self.filtered_items)
+        self.current_page = 0 # Reset to first page on data load/filter
+        self.update_pagination_info()
+        self.display_page()
+
+        # Load proposals (separate from paginated terms)
+        all_proposals = list(self.db_manager.get_dictionary_proposals().values())
+        self.all_proposals = sorted(all_proposals, key=lambda x: x['english_term'].lower())
+        self.render_proposals_page(self.all_proposals) # Render all proposals, pagination handled internally
+
+    def display_page(self):
+        # This method is called by PaginatedEditorWindow to display the current page of terms
+        for widget in self.terms_content_frame.winfo_children():
+            widget.destroy()
+
+        ctk.CTkLabel(self.terms_content_frame, text="Английский термин", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(self.terms_content_frame, text="Русский перевод", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        start_index = self.current_page * self.items_per_page
+        end_index = start_index + self.items_per_page
+        page_terms = self.filtered_items[start_index:end_index]
+
+        for i, term_data in enumerate(page_terms):
+            original_eng = term_data['english_term']
+            widget_vars = self.term_widgets[original_eng]
+
+            eng_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['eng_var'])
+            eng_entry.grid(row=i + 1, column=0, padx=5, pady=2, sticky="ew")
+            rus_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['rus_var'])
+            rus_entry.grid(row=i + 1, column=1, padx=5, pady=2, sticky="ew")
+
+            widget_vars['eng_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+            widget_vars['rus_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+
+            delete_btn = ctk.CTkButton(self.terms_content_frame, text="X", width=25, command=lambda oe=original_eng: self.delete_term(oe))
+            delete_btn.grid(row=i + 1, column=2, padx=5, pady=2)
+
+    def on_tab_change(self):
+        # When tab changes, ensure pagination info is updated for the active tab
+        if self.tab_view.get() == "Словарь":
+            self.update_pagination_info()
+        elif self.tab_view.get() == "Предложения":
+            # Proposals tab has its own pagination logic
+            pass
+
+    def change_page(self, delta):
+        # This method is now handled by PaginatedEditorWindow's prev_page/next_page
+        super().change_page(delta)
+
+    def change_page_proposals(self, delta):
+        # This remains for proposals tab
+        total_pages = (len(self.all_proposals) + self.items_per_page - 1) // self.items_per_page
+        new_page = self.current_page_proposals + delta
+        if 1 <= new_page <= total_pages:
+            self.current_page_proposals = new_page
+            self.render_proposals_page(self.all_proposals) # Re-render with new page
         self.tab_view.add("Словарь")
         self.tab_view.add("Предложения")
         self.tab_view.set("Словарь")

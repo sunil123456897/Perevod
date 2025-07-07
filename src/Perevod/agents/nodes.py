@@ -1,10 +1,11 @@
 # agents/nodes.py
 
-import os
 import logging
 import google.generativeai as genai
 from Perevod.agents.state import AgentState
 from Perevod.agents import tools
+from Perevod.utils.file_io import tool_read_chapter, tool_write_chapter
+import os # Keep os for os.makedirs and os.listdir
 
 logger = logging.getLogger("NovelTranslator.AgentNodes")
 
@@ -46,10 +47,10 @@ def process_all_chapters_node(state: AgentState) -> dict:
             if progress_callback:
                 progress_callback(i / total_chapters * 100, f"Перевод главы {i+1}/{total_chapters}: {title}")
 
-            raw_text = tools.tool_read_chapter(chapter_data['input_path'])
-            eng_text, _ = tools.tool_sanitize_text(raw_text)
+            raw_text = tool_read_chapter(chapter_data['input_path'])
+            eng_text = raw_text # tool_sanitize_text is a placeholder and not needed for now
             rus_text = tools.tool_translate_chapter_logic(eng_text, title, settings, db_manager, kb_manager, model)
-            tools.tool_write_chapter(chapter_data['output_path'], rus_text)
+            tool_write_chapter(chapter_data['output_path'], rus_text)
             
             # Генерация предложений для словаря и Библии Вселенной
             tools.tool_generate_dictionary_proposals(eng_text, rus_text, db_manager, model, settings)

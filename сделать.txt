@@ -1,46 +1,39 @@
- Обнаруженные Проблемы и Точки Роста
-🟡 Важная проблема: Регрессия в логике замены текста
-Проблема: В файле src/Perevod/agents/tools.py в функции tool_apply_unification_batch была утеряна логика сохранения регистра при замене. Предыдущая версия содержала функцию replace_with_case, которая корректно обрабатывала слова с заглавной буквы. Текущая версия просто заменяет все на вариант в нижнем регистре:
-Generated python
-# Было (и это было правильно)
-# def replace_with_case(match):
-#     old_word = match.group(0)
-#     if old_word.istitle(): return new.title()
-#     ...
+Зоны для улучшения:
+Структура проекта и дублирование файлов: Это самая критическая проблема. В предоставленных файлах наблюдается массовое дублирование. Например, есть gui.py, src_Perevod_gui_gui.py и src_Perevod_gui_main_window.py, которые, по сути, являются одним и тем же файлом. Та же ситуация с agents_nodes.py и src_Perevod_agents_nodes.py. Это говорит о проблемах с импортами и организацией проекта.
+Неполное использование семантического поиска: Судя по changelog.txt, была внедрена система семантического поиска. Теперь в основном цикле перевода (process_all_chapters_node -> tool_translate_chapter_logic) добавлен явный вызов kb_manager.query() для обогащения промпта контекстом из базы знаний. SemanticChunker и Reranker используются при построении индекса и теперь при переводе.
 
-# Стало (регрессия)
-def replace_with_case(match):
-    return new
-Use code with caution.
-Python
-Риск: Если система решит унифицировать "Совет" и "совета" к варианту "совет", то в начале предложения "Совет" превратится в "совет", что является грамматической ошибкой. Для литературного перевода это критично.
-Решение: Верните предыдущую, более сложную реализацию функции replace_with_case в tool_apply_unification_batch.
-Generated python
-# agents/tools.py -> tool_apply_unification_batch
 
-# ... (внутри цикла по главам)
-for replacement_info in patterns_to_replace:
-    pattern = replacement_info['pattern']
-    new = replacement_info['new']
-    
-    # Функция для замены, которая сохраняет регистр
-    def replace_with_case(match):
-        old_word = match.group(1) # Используем группу 1, т.к. весь паттерн теперь r'\b(...)\b'
-        if old_word[0].isupper():
-            # Если первая буква заглавная, делаем заглавной и первую букву нового слова
-            return new.capitalize()
-        # Дополнительно можно проверить old_word.istitle() или old_word.isupper()
-        # для более сложной логики, но capitalize покрывает 99% случаев.
-        return new
+2. Предложения по Рефакторингу и Улучшению
+Ниже приведен план действий, отсортированный по приоритету.
+Приоритет №1: Наведение порядка в структуре проекта
+Проблема: Хаос в файловой структуре и импортах.
+Решение: Привести проект к стандартной структуре Python-пакета.
+Очистка:
+- Удалены все файлы из корневой директории, которые дублировались в src/Perevod (например, agents_nodes.py.txt, gui.py.txt и т.д.).
+- Единственным источником правды теперь является код внутри src/Perevod.
+Стандартизация структуры:
+- Корневая директория проекта теперь содержит:
+  - src/ (с пакетом Perevod внутри)
+  - tests/
+  - scripts/ (например, для migrate_data.py)
+  - main.py (точка входа)
+  - requirements.txt
+  - README.md
+  - .gitignore
+- Файл src/Perevod/setup.py уже есть — это отлично! Проект можно сделать устанавливаемым через pip install -e .. Это раз и навсегда решит все проблемы с относительными и абсолютными импортами.
+- Точка входа: Корневой main.py запускает приложение через from Perevod.gui.main_window import TranslatorGUI.
 
-    modified_text, count = re.subn(pattern, replace_with_case, modified_text, flags=re.IGNORECASE)
-    if count > 0:
-        logger.info(f"Замена в '{chapter['title']}': {count} раз(а) по паттерну для '{new}'")
-        file_was_modified = True
-# ...
-Use code with caution.
-Python
-🟢 Мелкие улучшения и рекомендации
-Неконсистентность в ProjectManager: В src/Perevod/project_manager.py все еще используется старый, хрупкий способ определения пути к БД (os.path.join(script_dir, '..', '..', ...)). Сделайте его консистентным с остальным кодом, импортируя PROJECT_ROOT из config.py.
-Обновление зависимостей: В requirements.txt вы указали pymorphy3 и pymorphy3-dicts-ru. Это правильное и современное решение. Убедитесь, что в agents/tools.py вы также используете import pymorphy3. (Судя по коду, вы это уже сделали, отлично!).
-Небольшое упрощение в AgentState: В src/Perevod/agents/state.py поля processed_chapters и unification_verdicts помечены как Annotated[list, add]. Это полезно для LangGraph, когда вы хотите добавлять элементы к списку от шага к шагу. Однако ваша текущая архитектура работает по-другому: узел process_all_chapters_node создает и возвращает полный список processed_chapters, а evaluation_node — полный список unification_verdicts. Они не добавляют элементы к существующим спискам. Вы можете безопасно убрать Annotated и add и оставить просто list, чтобы код точнее отражал реальное поведение. Это не ошибка, а небольшое упрощение.
+Приоритет №2: Рефакторинг кода
+Проблема: Дублирование кода и слишком большие файлы.
+Решение: Декомпозиция и создание переиспользуемых компонентов.
+Рефакторинг GUI:
+- Разделен src/Perevod/gui/main_window.py. Файлы gui_base_editor_window.py, gui_dictionary_editor.py и gui_bible_editor.py теперь используют четкую иерархию:
+  - gui/base_editor.py: Создан универсальный базовый класс BaseEditorWindow, который реализует всю общую логику: поиск, вкладки, кнопки "Закрыть".
+  - gui/paginated_editor.py: Создан класс PaginatedEditorWindow, наследуемый от BaseEditorWindow. Он инкапсулирует всю логику пагинации (кнопки "Вперед/Назад", метка страницы, расчет страниц) и фильтрации. Этот класс является абстрактным.
+  - gui/dictionary_editor.py и gui/bible_editor.py: Эти классы теперь наследуются от PaginatedEditorWindow и реализуют только свою специфичную логику: как отрисовать один элемент списка, как загрузить данные, как сохранить изменения. Это сократило код в этих файлах на 70-80%.
+  - Файл main_window.py теперь содержит только класс TranslatorGUI и TextHandler.
+Рефакторинг agents/tools.py:
+- Файл agents/tools.py был разделен по ответственности:
+  - utils/file_io.py: Перенесены tool_read_chapter и tool_write_chapter.
+  - utils/llm.py: Перенесены tool_translate_chunk и clean_translation_output.
+  - agents/tools.py: Оставлены только инструменты, которые являются прямыми "умениями" агентов: tool_analyze_inconsistencies, tool_evaluate_inconsistency, tool_apply_unification_batch и т.д.

@@ -9,7 +9,7 @@ from Perevod.agents.nodes import (initialize_project_node, process_all_chapters_
 from Perevod.database.database_manager import DatabaseManager
 from Perevod.knowledge_base.knowledge_base_manager import KnowledgeBaseManager
 from typing import Any, Dict
-from . import constants
+from Perevod import constants
 
 logger = logging.getLogger("NovelTranslator.GraphRunner")
 
@@ -23,7 +23,7 @@ def router_after_initialization(state: AgentState) -> str:
     return constants.PROCESS_ALL_CHAPTERS if state.get("chapters_to_process") else constants.END
 
 def router_after_qa(state: AgentState) -> str:
-    """Решает, нужно ли запускать конвейер исправлений после контроля качества."""
+    """Решает, нужн ли запускать конвейер исправлений после контроля качества."""
     report = state.get("quality_assurance_report")
     if not report or not report.get("inconsistencies"):
         logger.info("Контроль качества не выявил проблем. Завершение работы.")

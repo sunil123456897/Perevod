@@ -20,3 +20,4 @@ def simple_translate(text_to_translate, api_key, model_name):
         logger.error(f"Ошибка при вызове API перевода: {e}", exc_info=True)
         return f"ОШИБКА ПЕРЕВОДА: {e}"
 
+

@@ -1,5 +1,7 @@
 # agents/tools.py
 
+import unicodedata
+import unicodedata
 import logging
 import json
 import re
@@ -131,36 +133,7 @@ def tool_analyze_inconsistencies(processed_texts: List[Dict[str, str]], dictiona
     return {"inconsistencies": inconsistencies}
 
 from Perevod import constants
-import pymorphy2
-
-morph = None
-
-def _initialize_pymorphy2():
-    global morph
-    if morph is None:
-        try:
-            morph = pymorphy2.MorphAnalyzer()
-        except Exception as e:
-            logger.error(f"Ошибка инициализации pymorphy2: {e}. Пожалуйста, убедитесь, что словарь установлен (pip install pymorphy2[dicts]).", exc_info=True)
-            morph = None
-
-def get_all_word_forms(word: str) -> List[str]:
-    """Генерирует все возможные словоформы для заданного слова с помощью pymorphy2."""
-    _initialize_pymorphy2()
-    if morph is None:
-        logger.warning("pymorphy2 не инициализирован, возвращаю только исходное слово.")
-        return [word]
-
-    forms = set()
-    parsed_word = morph.parse(word)
-    if parsed_word:
-        for p in parsed_word:
-            for form in p.lexeme:
-                forms.add(form.word)
-    else:
-        forms.add(word)
-    return list(forms)
-
+...
 def tool_evaluate_inconsistency(issue: Dict[str, Any], dictionary: Dict[str, Any], model, settings: Dict[str, Any]) -> Dict[str, Any]:
     """Инструмент "Коллегии Судей" для одной проблемы."""
     eng_term = issue['english_term']
@@ -174,15 +147,57 @@ def tool_evaluate_inconsistency(issue: Dict[str, Any], dictionary: Dict[str, Any
             
     prompt = f"""# ROLE: Linguistic Arbiter\n# TASK: You are given an English term and several Russian translation variants found in a text. Your task is to choose the single best, most contextually appropriate, and stylistically correct translation.\n# ENGLISH TERM: "{eng_term}"\n# RUSSIAN VARIANTS: {json.dumps(variants, ensure_ascii=False)}\n# INSTRUCTIONS:\n1. Analyze the variants.\n2. Choose the one that is most likely to be the correct, canonical translation.\n3. Return ONLY the chosen variant, and nothing else.\n# BEST TRANSLATION:"""
     
-    best_variant = clean_translation_output(tool_translate_chunk(model, prompt, settings))
-    if not best_variant or best_variant not in variants:
-        # Если LLM вернул некорректный ответ, выбираем самый частый или первый вариант
-        best_variant = max(set(variants), key=variants.count)
-        logger.warning(f"LLM не смог выбрать вариант для '{eng_term}'. Эвристически выбран: '{best_variant}'")
+    llm_response_raw = tool_translate_chunk(model, prompt, settings)
+    llm_response_cleaned = clean_translation_output(llm_response_raw)
+    
+    chosen_variant = None
+    try:
+        response_json = json.loads(llm_response_cleaned)
+        chosen_variant = response_json.get("chosen_variant")
+    except json.JSONDecodeError:
+        logger.warning(f"LLM вернул некорректный JSON для '{eng_term}': {llm_response_cleaned}")
+
+    if not chosen_variant or chosen_variant not in variants:
+        # Если LLM вернул некорректный ответ или выбранный вариант не в списке, выбираем самый частый или первый вариант
+        chosen_variant = max(set(variants), key=variants.count)
+        logger.warning(f"LLM не смог выбрать вариант для '{eng_term}'. Эвристически выбран: '{chosen_variant}'")
     else:
-        logger.info(f"Вердикт для '{eng_term}' вынесен LLM: '{best_variant}' выбран как лучший вариант.")
+        logger.info(f"Вердикт для '{eng_term}' вынесен LLM: '{chosen_variant}' выбран как лучший вариант.")
+    
+    best_variant = chosen_variant
     
     return {"action": constants.UNIFY_ACTION, "english_term": eng_term, "correct_variant": best_variant, "reason": "llm_choice"}
+
+import pymorphy3
+
+morph = None
+
+def _initialize_pymorphy3():
+    global morph
+    if morph is None:
+        try:
+            morph = pymorphy3.MorphAnalyzer()
+        except Exception as e:
+            logger.error(f"Ошибка инициализации pymorphy3: {e}. Пожалуйста, убедитесь, что словарь установлен (pip install pymorphy3[dicts]).", exc_info=True)
+            morph = None
+
+def get_all_word_forms(word: str) -> List[str]:
+    """Генерирует все возможные словоформы для заданного слова с помощью pymorphy3."""
+    _initialize_pymorphy3()
+    if morph is None:
+        logger.warning("pymorphy3 не инициализирован, возвращаю только исходное слово.")
+        return [word]
+
+    forms = set()
+    parsed_word = morph.parse(word)
+    if parsed_word:
+        for p in parsed_word:
+            for form in p.lexeme:
+                forms.add(form.word)
+    else:
+        forms.add(word)
+    print(f"Generated forms for '{word}': {list(forms)}")
+    return list(forms)
 
 def tool_apply_unification_batch(verdicts: List[Dict[str, Any]], processed_chapters: List[Dict[str, str]]):
     """
@@ -215,15 +230,13 @@ def tool_apply_unification_batch(verdicts: List[Dict[str, Any]], processed_chapt
     for new_word, old_words_set in grouped_verdicts.items():
         all_forms_to_replace = set()
         for old_word in old_words_set:
-            # Получаем все словоформы для старого слова
-            forms = get_all_word_forms(old_word)
-            all_forms_to_replace.update(forms)
+            all_forms_to_replace.update(get_all_word_forms(old_word))
         
         if all_forms_to_replace:
             # Создаем паттерн, который ищет любую из этих словоформ
             # Сортируем по длине, чтобы сначала заменялись более длинные формы
             sorted_forms = sorted(list(all_forms_to_replace), key=len, reverse=True)
-            pattern = r'\b(' + '|'.join(map(re.escape, sorted_forms)) + r')\b'
+            pattern = r'(?:^|(?<=[^a-zA-Z0-9_а-яА-Я]))(' + '|'.join(s for s in sorted_forms) + r')(?:$|(?=[^a-zA-Z0-9_а-яА-Я]))'
             patterns_to_replace.append({'pattern': pattern, 'new': new_word})
 
     if not patterns_to_replace:
@@ -245,16 +258,15 @@ def tool_apply_unification_batch(verdicts: List[Dict[str, Any]], processed_chapt
                 
                 # Функция для замены, которая сохраняет регистр первой буквы
                 def replace_with_case(match):
-                    old_word = match.group(0)
-                    if old_word.istitle():
-                        return new.title()
-                    if old_word.isupper():
-                        # Простая проверка на то, что слово целиком в верхнем регистре
-                        # Можно усложнить, если нужно поддерживать смешанный регистр
-                        return new.upper()
+                    old_word = match.group(1) # Используем группу 1, т.к. весь паттерн теперь r'\b(...)\b'
+                    if old_word[0].isupper():
+                        # Если первая буква заглавная, делаем заглавной и первую букву нового слова
+                        return new.capitalize()
+                    # Дополнительно можно проверить old_word.istitle() или old_word.isupper()
+                    # для более сложной логики, но capitalize покрывает 99% случаев.
                     return new
 
-                modified_text, count = re.subn(pattern, replace_with_case, modified_text, flags=re.IGNORECASE)
+                modified_text, count = re.subn(pattern, replace_with_case, modified_text, flags=re.UNICODE | re.IGNORECASE)
                 if count > 0:
                     file_was_modified = True
             
@@ -293,7 +305,7 @@ def tool_generate_dictionary_proposals(eng_text: str, rus_text: str, db_manager,
     existing_terms = db_manager.get_terms_dictionary()
     existing_proposals = db_manager.get_dictionary_proposals()
 
-    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant terms (e.g., unique names, magical spells, specific techniques, key concepts) that should be added to a specialized dictionary. For each identified term, provide its English form, its most likely Russian translation, and a category (e.g., 'character', 'place', 'magic', 'item', 'concept', 'technique', 'other').\n    \nIf no such significant terms are found, respond with 'NO_TERMS'.\n\nFormat your response as a JSON array of objects. Example:\n[\n  {{\n    "term": "Mana Flow",\n    "translation": "Поток Маны",\n    "category": "magic"\n  }},\n  {{\n    "term": "Shadow Step",\n    "translation": "Теневой Шаг",\n    "category": "technique"\n  }}\n]\n\nText to analyze:\n---\n{eng_text}\n---\n"""
+    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant terms (e.g., unique names, magical spells, specific techniques, key concepts) that should be added to a specialized dictionary. For each identified term, provide its English form, its most likely Russian translation, and a category (e.g., 'character', 'place', 'magic', 'item', 'concept', 'technique', 'other').\n    \nIf no such significant terms are found, respond with 'NO_TERMS'.\n\nFormat your response as a JSON array of objects. Example:\n[\n  {{\n    "term": "Mana Flow",\n    "translation": "Поток Маны",\n    "category": "magic"\n  }},\n  {{\n    "term": "Shadow Step",\n    "translation": "Теневой Шаг",\n    "category": "technique"\n  }}\n]\n\nText to analyze:\n---\n{eng_text}\n---"""
     
     try:
         llm_response = tool_translate_chunk(model, prompt, settings)
@@ -333,7 +345,7 @@ def tool_generate_world_bible_proposals(eng_text: str, rus_text: str, db_manager
     logger.info("Генерация предложений для Библии Вселенной...")
     
     # Промпт для извлечения сущностей и их описаний
-    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant entities (characters, places, magical items, unique concepts, organizations) that should be added to a "World Bible" (a compendium of lore). For each identified entity, provide its English name, a concise English description, its most likely Russian name, and a category (e.g., 'character', 'place', 'artifact', 'concept', 'organization').\n\nIf no significant entities are found, respond with 'NO_ENTITIES'.\n\nFormat your response as a JSON array of objects. Example:\n[\n  {{\n    "english_name": "Eldoria",\n    "english_description": "An ancient elven city known for its crystal spires and magical academies.",\n    "russian_name": "Элдория",\n    "category": "place"\n  }},\n  {{\n    "english_name": "Shadowblade",\n    "english_description": "A legendary dagger imbued with the essence of night, capable of piercing any armor.",\n    "russian_name": "Теневой Клинок",\n    "category": "artifact"\n  }}\n]\n\nText to analyze:\n---\n{eng_text}\n---\n"""
+    prompt = f"""Analyze the following English text from a fantasy novel. Identify 5 to 10 of the most important and significant entities (characters, places, magical items, unique concepts, organizations) that should be added to a "World Bible" (a compendium of lore). For each identified entity, provide its English name, a concise English description, its most likely Russian name, and a category (e.g., 'character', 'place', 'artifact', 'concept', 'organization').\n\nIf no significant entities are found, respond with 'NO_ENTITIES'.\n\nFormat your response as a JSON array of objects. Example:\n[\n  {{\n    "english_name": "Eldoria",\n    "english_description": "An ancient elven city known for its crystal spires and magical academies.",\n    "russian_name": "Элдория",\n    "category": "place"\n  }},\n  {{\n    "english_name": "Shadowblade",\n    "english_description": "A legendary dagger imbued with the essence of night, capable of piercing any armor.",\n    "russian_name": "Теневой Клинок",\n    "category": "artifact"\n  }}\n]\n\nText to analyze:\n---\n{eng_text}\n---"""
     try:
         llm_response = tool_translate_chunk(model, prompt, settings)
         response_json = clean_translation_output(llm_response)
@@ -370,5 +382,3 @@ def tool_generate_world_bible_proposals(eng_text: str, rus_text: str, db_manager
         logger.error(f"Ошибка парсинга JSON от LLM для Библии Вселенной: {e}. Ответ: {llm_response}", exc_info=True)
     except Exception as e:
         logger.error(f"Ошибка при генерации предложения Библии Вселенной: {e}", exc_info=True)
-
-

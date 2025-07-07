@@ -5,7 +5,7 @@ from tkinter import filedialog, messagebox
 import os
 import threading
 import logging
-from graph_runner import execute_graph_step_by_step
+from graph_runner import run_translation_workflow
 from project_manager import ProjectManager
 from config import DEFAULT_SETTINGS, AVAILABLE_MODELS
 from database.database_manager import DatabaseManager
@@ -244,7 +244,7 @@ class TranslatorGUI(ctk.CTk):
     def open_project_data_folder(self):
         project_name = self.settings_vars['project_name'].get()
         if project_name == "Default": messagebox.showinfo("Информация", "У проекта 'Default' нет своей папки данных."); return
-        path = os.path.join('_project_files', project_name); os.makedirs(path, exist_ok=True)
+        path = os.path.join(PROJECT_ROOT, '_project_files', project_name); os.makedirs(path, exist_ok=True)
         try: os.startfile(path)
         except AttributeError: import subprocess; subprocess.run(['xdg-open', path])
 
@@ -303,7 +303,7 @@ class TranslatorGUI(ctk.CTk):
         self.translation_running = True; self.after(0, self.update_ui_for_translation_state, True)
         try:
             project_name = self.settings_vars['project_name'].get(); settings = self.get_current_settings_from_ui()
-            final_state = execute_graph_step_by_step(project_name, settings_overrides=settings, progress_callback=self.update_progress)
+            final_state = run_translation_workflow(project_name, self.db_manager, self.kb_manager, self.model, progress_callback=self.update_progress)
             if final_state.get("error"): raise Exception(final_state["error"])
             self.update_progress(100, f"Перевод и аудит успешно завершены! Обработано глав: {len(final_state.get('processed_chapters', []))}")
             gui_logger.info("Полный цикл перевода и аудита успешно завершен.")
@@ -752,7 +752,8 @@ class WorldBibleEditorWindow(BaseEditorWindow):
         for i, data in enumerate(page_proposals):
             eng = data['english_name']
             frame = ctk.CTkFrame(self.proposals_content_frame, border_width=1); frame.grid(row=i + 1, column=0, sticky="ew", pady=2, padx=5); frame.grid_columnconfigure(0, weight=1)
-            label_text = f"{eng} ({data['category']})"; label = ctk.CTkLabel(frame, text=label_text, anchor="w"); label.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
+            label_text = f"{eng} ({data['category']})"
+            label = ctk.CTkLabel(frame, text=label_text, anchor="w"); label.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
             desc_text = ctk.CTkLabel(frame, text=data['description'], wraplength=700, justify="left", anchor="w", fg_color="gray20", corner_radius=5); desc_text.grid(row=1, column=0, sticky="ew", padx=5, pady=2)
             btn_frame = ctk.CTkFrame(frame, fg_color="transparent"); btn_frame.grid(row=0, column=1, rowspan=2, sticky="e");
             btn_accept = ctk.CTkButton(btn_frame, text="✓ Принять", width=100, command=lambda e=eng, d=data: self.accept_proposal(e, d)); btn_accept.pack(padx=5, pady=2)

@@ -51,4 +51,3 @@ if updated_files:
         print(f'- {f}')
 else:
     print('No files needed updating.')
-

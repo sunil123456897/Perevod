@@ -13,7 +13,7 @@ class AgentState(TypedDict):
 
     # Очередь задач и результаты
     chapters_to_process: List[Dict[str, str]]
-    processed_chapters: Annotated[list, add]
+    processed_chapters: list
     
     # Служебные поля
     error: str | None
@@ -21,10 +21,11 @@ class AgentState(TypedDict):
     # Менеджеры данных
     db_manager: Any 
     kb_manager: Any
+    model: Any
     
     # --- Поля для Конвейера Контроля Качества ---
     # Отчет от агента-аудитора
     quality_assurance_report: Dict[str, Any] | None
     
     # [ИЗМЕНЕНО] Список вердиктов от "Коллегии Судей" для пакетного исправления
-    unification_verdicts: Annotated[list, add]
+    unification_verdicts: list
