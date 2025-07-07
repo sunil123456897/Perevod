@@ -3,20 +3,22 @@ import unittest
 from unittest.mock import patch, MagicMock
 import os
 import google.generativeai as genai
+import logging
+import shutil
 
 # Mock the environment variable before other imports
 os.environ['GOOGLE_API_KEY'] = 'test_api_key'
 
-from graph_runner import run_translation_workflow
-from agents.state import AgentState
-from config import DEFAULT_SETTINGS
+from src.Perevod.graph_runner import run_translation_workflow
+from Perevod.agents.state import AgentState
+from Perevod.config import DEFAULT_SETTINGS
 
 class TestGraphRunner(unittest.TestCase):
 
-    @patch('graph_runner.DatabaseManager')
-    @patch('graph_runner.KnowledgeBaseManager')
+    @patch('src.Perevod.graph_runner.DatabaseManager')
+    @patch('Perevod.graph_runner.KnowledgeBaseManager')
     @patch('google.generativeai.GenerativeModel')
-    def test_full_graph_execution(self, mock_genai_model, mock_kb_manager, mock_db_manager):
+    def test_full_graph_execution(self, mock_db_manager, mock_kb_manager, mock_genai_model):
         """
         Тестирует полный прогон графа с моками зависимостей.
         Проверяет, что граф успешно доходит до конца без ошибок.
@@ -34,19 +36,19 @@ class TestGraphRunner(unittest.TestCase):
         mock_kb_manager.return_value = mock_kb_instance
 
         # Mock для LLM (genai.GenerativeModel)
+        class MockResponse:
+            def __init__(self, text_content):
+                self.text = text_content
+
         mock_llm_instance = MagicMock()
         # Моделируем ответ для этапа перевода
-        mock_translation_response = MagicMock()
-        mock_translation_response.text = "Translated text."
-        # Моделируем ответ для этапа QA
-        mock_qa_response = MagicMock()
-        mock_qa_response.text = '{"inconsistencies": []}' # Отчет без ошибок
-        
         mock_llm_instance.generate_content.side_effect = [
-            mock_translation_response, # Ответ для pre_translate_node
-            mock_qa_response         # Ответ для quality_assurance_node
+            MockResponse("Translated text."), # Ответ для pre_translate_node
+            MockResponse('{"inconsistencies": []}')         # Ответ для quality_assurance_node
         ]
         mock_genai_model.return_value = mock_llm_instance
+
+        
 
         # 2. Подготовка тестовых данных и настроек
         project_name = "test_project"
@@ -68,25 +70,24 @@ class TestGraphRunner(unittest.TestCase):
             "project_name": project_name,
             "enable_smart_dictionary_update": False, # Отключаем, чтобы не усложнять тест
             "enable_bible_analysis": False,
+            "overwrite_existing": True,
         })
 
         # 3. Запуск графа
-        final_state = run_translation_workflow(project_name, settings_overrides)
+        final_state = run_translation_workflow(settings_overrides, mock_db_instance, mock_kb_instance, mock_llm_instance)
 
         # 4. Проверка результатов
         self.assertIsNotNone(final_state)
         self.assertNotIn("error", final_state, f"Граф завершился с ошибкой: {final_state.get('error')}")
         self.assertIn("processed_chapters", final_state)
         self.assertEqual(len(final_state["processed_chapters"]), 1)
-        self.assertEqual(final_state["processed_chapters"][0], "chapter1.txt")
+        self.assertEqual(final_state["processed_chapters"][0]['title'], "chapter1")
         
         # Проверяем, что выходной файл был создан
         output_file_path = os.path.join(output_dir, "chapter1.txt")
         self.assertTrue(os.path.exists(output_file_path))
         
         # Проверяем, что моки были вызваны
-        mock_db_manager.assert_called_with(project_name)
-        mock_kb_manager.assert_called_with(project_name, 'test_api_key', settings_overrides['embedding_model_name'])
         self.assertGreater(mock_llm_instance.generate_content.call_count, 0)
 
         # Очистка после теста
@@ -94,6 +95,7 @@ class TestGraphRunner(unittest.TestCase):
         os.remove(output_file_path)
         os.rmdir(input_dir)
         os.rmdir(output_dir)
+        shutil.rmtree(os.path.join('_project_files', project_name, 'chroma_db'), ignore_errors=True)
         os.rmdir(os.path.join('_project_files', project_name))
 
 

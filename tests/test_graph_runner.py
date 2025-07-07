@@ -9,13 +9,13 @@ import shutil
 # Mock the environment variable before other imports
 os.environ['GOOGLE_API_KEY'] = 'test_api_key'
 
-from Perevod.graph_runner import run_translation_workflow
+from src.Perevod.graph_runner import run_translation_workflow
 from Perevod.agents.state import AgentState
 from Perevod.config import DEFAULT_SETTINGS
 
 class TestGraphRunner(unittest.TestCase):
 
-    @patch('graph_runner.DatabaseManager')
+    @patch('src.Perevod.graph_runner.DatabaseManager')
     @patch('Perevod.graph_runner.KnowledgeBaseManager')
     @patch('google.generativeai.GenerativeModel')
     def test_full_graph_execution(self, mock_db_manager, mock_kb_manager, mock_genai_model):

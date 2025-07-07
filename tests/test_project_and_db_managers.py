@@ -16,8 +16,7 @@ class TestProjectAndDBManagers(unittest.TestCase):
         Base.metadata.create_all(self.engine) # Создаем таблицы для in-memory DB
 
         # Мокаем ProjectManager, чтобы он использовал нашу in-memory DB
-        with patch('project_manager.get_engine_and_session', return_value=(self.engine, self.Session)):
-            self.project_manager = ProjectManager()
+        self.project_manager = ProjectManager(db_path=self.db_path)
         
         # Мокаем DatabaseManager, чтобы он использовал нашу in-memory DB
         # Для DatabaseManager нам нужно мокнуть get_project_settings, чтобы он не пытался

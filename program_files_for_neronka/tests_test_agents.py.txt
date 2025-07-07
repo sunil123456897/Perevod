@@ -1,8 +1,8 @@
 # tests/test_agents.py
 
 import pytest
-from agents.semantic_chunker import SemanticChunker
-from agents.reranker import Reranker
+from Perevod.agents.semantic_chunker import SemanticChunker
+from src.Perevod.agents.reranker import Reranker
 
 @pytest.fixture(scope="module")
 def chunker():

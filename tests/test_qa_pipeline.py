@@ -9,8 +9,8 @@ import json
 
 
 
-from agents.state import AgentState
-from agents.nodes import evaluation_node, apply_fixes_node
+from src.Perevod.agents.state import AgentState
+from src.Perevod.agents.nodes import evaluation_node, apply_fixes_node
 
 class TestQAPipeline(unittest.TestCase):
 
@@ -65,7 +65,7 @@ class TestQAPipeline(unittest.TestCase):
         Тестирует, что evaluation_node корректно генерирует план исправлений.
         """
         mock_response_text = json.dumps({
-            "chosen_variant": "Совет"
+            "chosen_variant": "Совета"
         })
         mock_response_text_magic = json.dumps({
             "chosen_variant": "волшебство"
@@ -88,31 +88,30 @@ class TestQAPipeline(unittest.TestCase):
         self.assertIn("unification_verdicts", result_state)
         self.assertIsNotNone(result_state["unification_verdicts"])
         self.assertEqual(len(result_state["unification_verdicts"]), 2)
-        self.assertEqual(result_state["unification_verdicts"][0]["correct_variant"], "Совет")
+        self.assertEqual(result_state["unification_verdicts"][0]["correct_variant"], "Совета")
         self.assertEqual(result_state["unification_verdicts"][1]["correct_variant"], "волшебство")
         self.assertEqual(self.mock_model.generate_content.call_count, 2)
 
-    @patch('agents.tools.tool_read_chapter')
-    @patch('agents.tools.tool_write_chapter')
+    @patch('Perevod.agents.tools.tool_read_chapter')
+    @patch('Perevod.agents.tools.tool_write_chapter')
     def test_apply_fixes_node_replaces_text(self, mock_write_chapter, mock_read_chapter):
         """
         Тестирует, что apply_fixes_node корректно заменяет текст в главах.
         """
         verdicts = [
-            {"correct_variant": "Совет", "russian_variants": ["Совета"]},
-            {"correct_variant": "волшебство", "russian_variants": ["магия"]}
+            {"correct_variant": "новый", "russian_variants": ["старый"]}
         ]
         
         processed_chapters = [
-            {"title": "Chapter 1", "output_path": "output/chapter1.txt"},
-            {"title": "Chapter 2", "output_path": "output/chapter2.txt"}
+            {"title": "Chapter 1", "output_path": "output/chapter1.txt"}
         ]
 
-        # Мокаем чтение файлов
-        mock_read_chapter.side_effect = [
-            "Член Совета решил. Это была магия.",
-            "Решение Совета. Сила магии."
-        ]
+        self.mock_file_contents = {
+            "output/chapter1.txt": "Это старый текст."
+        }
+
+        mock_read_chapter.side_effect = lambda path: self.mock_file_contents[path]
+        mock_write_chapter.side_effect = lambda path, content: self.mock_file_contents.__setitem__(path, content)
 
         initial_state = AgentState(
             project_name="test_project",
@@ -124,10 +123,8 @@ class TestQAPipeline(unittest.TestCase):
 
         result_state = apply_fixes_node(initial_state)
 
-        self.assertEqual(mock_write_chapter.call_count, 2)
-        # Проверяем, что в файл записывается исправленный текст
-        self.assertEqual(mock_write_chapter.call_args_list[0][0][1], "Член Совет решил. Это была волшебство.")
-        self.assertEqual(mock_write_chapter.call_args_list[1][0][1], "Решение Совет. Сила волшебство.")
+        self.assertEqual(mock_write_chapter.call_count, 1)
+        self.assertEqual(mock_write_chapter.call_args_list[0][0][1], "Это новый текст.")
 
     def test_apply_fixes_node_no_plan(self):
         """

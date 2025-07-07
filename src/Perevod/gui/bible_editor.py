@@ -1,21 +1,22 @@
-
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import logging
-from Perevod.gui.paginated_editor import PaginatedEditorWindow
+from Perevod.gui.base_editor_window import BaseEditorWindow
 from Perevod.agents.translator import simple_translate
 
 gui_logger = logging.getLogger("NovelTranslator.GUI")
 
-class WorldBibleEditorWindow(PaginatedEditorWindow):
+class WorldBibleEditorWindow(BaseEditorWindow):
     def __init__(self, master, db_manager, api_key, model_name):
         super().__init__(master, "Редактор Библии Вселенной", "1200x800")
         self.db_manager = db_manager
         self.api_key = api_key
         self.model_name = model_name
+        self.all_entries = []
         self.all_proposals = []
         self.entry_widgets = {}
+        self.current_page_entries = 1
         self.current_page_proposals = 1
         self.items_per_page = 10
 
@@ -47,11 +48,11 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
         self.entries_nav_frame = ctk.CTkFrame(entries_frame, fg_color="transparent")
         self.entries_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
         self.entries_nav_frame.grid_columnconfigure(1, weight=1)
-        self.prev_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="< Назад", command=lambda: self.change_page(-1))
+        self.prev_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="< Назад", command=lambda: self.change_page_entries(-1))
         self.prev_entries_btn.grid(row=0, column=0)
         self.page_label_entries = ctk.CTkLabel(self.entries_nav_frame, text="Страница 1 / 1")
         self.page_label_entries.grid(row=0, column=1)
-        self.next_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="Вперед >", command=lambda: self.change_page(1))
+        self.next_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="Вперед >", command=lambda: self.change_page_entries(1))
         self.next_entries_btn.grid(row=0, column=2)
 
         # --- Вкладка "Предложения" ---
@@ -92,10 +93,10 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
             self.after(0, messagebox.showerror, "Ошибка", f"Не удалось загрузить данные Библии: {e}")
 
     def _populate_ui(self, entries, proposals):
-        self.all_items = sorted(entries, key=lambda x: x['english_name'].lower())
+        self.all_entries = sorted(entries, key=lambda x: x['english_name'].lower())
         self.all_proposals = sorted(proposals, key=lambda x: x['english_name'].lower())
         self.entry_widgets = {}
-        for entry in self.all_items:
+        for entry in self.all_entries:
             entry['is_new'] = False
             entry['is_modified'] = False
             self.entry_widgets[entry['english_name']] = {
@@ -105,17 +106,17 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
                 'desc_eng_text': entry.get('description', ''),
                 'desc_rus_text': entry.get('russian_description', '')
             }
-        self.current_page = 1
+        self.current_page_entries = 1
         self.current_page_proposals = 1
         self.filter_entries()
 
     def on_tab_change(self):
         self.filter_entries()
 
-    def render_page(self, entries_to_render):
+    def render_entries_page(self, entries_to_render):
         for widget in self.entries_content_frame.winfo_children(): widget.destroy()
         
-        start_index = (self.current_page - 1) * self.items_per_page
+        start_index = (self.current_page_entries - 1) * self.items_per_page
         end_index = start_index + self.items_per_page
         page_entries = entries_to_render[start_index:end_index]
 
@@ -123,9 +124,9 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
             self.create_entry_widget(entry_data, i)
 
         total_pages = (len(entries_to_render) + self.items_per_page - 1) // self.items_per_page
-        self.page_label_entries.configure(text=f"Страница {self.current_page} / {max(1, total_pages)}")
-        self.prev_entries_btn.configure(state="normal" if self.current_page > 1 else "disabled")
-        self.next_entries_btn.configure(state="normal" if self.current_page < total_pages else "disabled")
+        self.page_label_entries.configure(text=f"Страница {self.current_page_entries} / {max(1, total_pages)}")
+        self.prev_entries_btn.configure(state="normal" if self.current_page_entries > 1 else "disabled")
+        self.next_entries_btn.configure(state="normal" if self.current_page_entries < total_pages else "disabled")
 
     def create_entry_widget(self, entry_data, index):
         original_eng = entry_data['english_name']
@@ -201,13 +202,13 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
         self.next_proposals_btn.configure(state="normal" if self.current_page_proposals < total_pages else "disabled")
 
     def mark_as_modified(self, original_eng):
-        entry = next((e for e in self.all_items if e['english_name'] == original_eng), None)
+        entry = next((e for e in self.all_entries if e['english_name'] == original_eng), None)
         if entry: entry['is_modified'] = True
 
     def add_new_entry(self):
-        new_entry_id = f"__new_{len([e for e in self.all_items if e.get('is_new')])}"
+        new_entry_id = f"__new_{len([e for e in self.all_entries if e.get('is_new')])}"
         new_entry = {'english_name': new_entry_id, 'russian_name': '', 'category': '', 'description': '', 'russian_description': '', 'is_new': True, 'is_modified': True}
-        self.all_items.insert(0, new_entry)
+        self.all_entries.insert(0, new_entry)
         self.entry_widgets[new_entry_id] = {
             'eng_var': ctk.StringVar(value=''), 'rus_var': ctk.StringVar(value=''),
             'cat_var': ctk.StringVar(value=''), 'desc_eng_text': '', 'desc_rus_text': ''
@@ -216,7 +217,7 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
 
     def save_all_entries(self):
         try:
-            for entry_data in self.all_items:
+            for entry_data in self.all_entries:
                 if not entry_data.get('is_modified'): continue
                 
                 original_eng = entry_data['english_name']
@@ -246,7 +247,7 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
             gui_logger.error(f"Ошибка сохранения Библии: {e}", exc_info=True)
 
     def delete_entry(self, original_eng):
-        self.all_items = [e for e in self.all_items if e['english_name'] != original_eng]
+        self.all_entries = [e for e in self.all_entries if e['english_name'] != original_eng]
         self.entry_widgets.pop(original_eng, None)
         self.db_manager.delete_bible_entry(original_eng)
         self.filter_entries()
@@ -273,23 +274,23 @@ class WorldBibleEditorWindow(PaginatedEditorWindow):
         query = self.search_var.get().lower()
         
         # Фильтрация для Библии
-        filtered_entries = [e for e in self.all_items if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
-        self.current_page = 1
-        self.render_page(filtered_entries)
+        filtered_entries = [e for e in self.all_entries if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
+        self.current_page_entries = 1
+        self.render_entries_page(filtered_entries)
 
         # Фильтрация для Предложений
         filtered_proposals = [p for p in self.all_proposals if query in p['english_name'].lower() or (p.get('russian_name') and query in p['russian_name'].lower()) or query in p['description'].lower()]
         self.current_page_proposals = 1
         self.render_proposals_page(filtered_proposals)
 
-    def change_page(self, delta):
+    def change_page_entries(self, delta):
         query = self.search_var.get().lower()
-        filtered_entries = [e for e in self.all_items if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
+        filtered_entries = [e for e in self.all_entries if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
         total_pages = (len(filtered_entries) + self.items_per_page - 1) // self.items_per_page
-        new_page = self.current_page + delta
+        new_page = self.current_page_entries + delta
         if 1 <= new_page <= total_pages:
-            self.current_page = new_page
-            self.render_page(filtered_entries)
+            self.current_page_entries = new_page
+            self.render_entries_page(filtered_entries)
 
     def change_page_proposals(self, delta):
         query = self.search_var.get().lower()

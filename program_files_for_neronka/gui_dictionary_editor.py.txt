@@ -1,9 +1,8 @@
-
 import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import logging
-from gui.base_editor_window import BaseEditorWindow
+from Perevod.gui.base_editor_window import BaseEditorWindow
 
 gui_logger = logging.getLogger("NovelTranslator.GUI")
 

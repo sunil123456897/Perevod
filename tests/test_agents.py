@@ -2,7 +2,7 @@
 
 import pytest
 from Perevod.agents.semantic_chunker import SemanticChunker
-from agents.reranker import Reranker
+from src.Perevod.agents.reranker import Reranker
 
 @pytest.fixture(scope="module")
 def chunker():

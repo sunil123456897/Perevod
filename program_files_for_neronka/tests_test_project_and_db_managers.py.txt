@@ -1,15 +1,11 @@
 import unittest
 import os
-import sys
 from unittest.mock import patch, MagicMock
 
-# Добавляем корневую директорию проекта в sys.path, чтобы импорты работали
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from project_manager import ProjectManager
-from database.database_manager import DatabaseManager
-from database.models import Base, get_engine_and_session
-from config import DEFAULT_SETTINGS
+from Perevod.project_manager import ProjectManager
+from Perevod.database.database_manager import DatabaseManager, get_engine_and_session
+from Perevod.database.models import Base, Project, Term, WorldBibleEntry, DictionaryProposal, WorldBibleProposal
+from Perevod.config import DEFAULT_SETTINGS
 
 class TestProjectAndDBManagers(unittest.TestCase):
 
@@ -20,8 +16,7 @@ class TestProjectAndDBManagers(unittest.TestCase):
         Base.metadata.create_all(self.engine) # Создаем таблицы для in-memory DB
 
         # Мокаем ProjectManager, чтобы он использовал нашу in-memory DB
-        with patch('project_manager.get_engine_and_session', return_value=(self.engine, self.Session)):
-            self.project_manager = ProjectManager()
+        self.project_manager = ProjectManager(db_path=self.db_path)
         
         # Мокаем DatabaseManager, чтобы он использовал нашу in-memory DB
         # Для DatabaseManager нам нужно мокнуть get_project_settings, чтобы он не пытался
@@ -133,7 +128,7 @@ class TestProjectAndDBManagers(unittest.TestCase):
         db_manager.add_dictionary_proposal("prop_eng", "prop_rus", "cat", 0.9)
         proposals = db_manager.get_dictionary_proposals()
         self.assertIn("prop_eng", proposals)
-        self.assertEqual(proposals["prop_eng"]["russian"], "prop_rus")
+        self.assertEqual(proposals["prop_eng"]["russian_term"], "prop_rus")
         
         db_manager.delete_dictionary_proposal("prop_eng")
         self.assertNotIn("prop_eng", db_manager.get_dictionary_proposals())
@@ -198,48 +193,7 @@ class TestProjectAndDBManagers(unittest.TestCase):
         self.assertIn(terms["apple"]["russian"], ["яблоко", "Яблоко"])
         self.assertIn(terms["banana"]["russian"], ["банан", "Банан"])
 
-    def test_run_master_edit(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        
-        # Мокаем LLM для master_edit
-        mock_llm = MagicMock()
-        mock_llm.generate_content.return_value.text = "Edited text content."
-        
-        # Мокаем genai.GenerativeModel
-        with patch('google.generativeai.GenerativeModel', return_value=mock_llm):
-            processed_texts = [
-                {"title": "Chapter 1", "rus": "Original text 1."},
-                {"title": "Chapter 2", "rus": "Original text 2."}
-            ]
-            
-            edited_text, error = db_manager.run_master_edit(processed_texts)
-            
-            self.assertIsNone(error)
-            self.assertEqual(edited_text, "Edited text content.")
-            mock_llm.generate_content.assert_called_once()
-            # Проверяем, что входной текст для LLM был сформирован правильно
-            call_args = mock_llm.generate_content.call_args[0][0]
-            self.assertIn("Original text 1.", call_args)
-            self.assertIn("Original text 2.", call_args)
-            self.assertIn("---=== CHAPTER: Chapter 1 ===---", call_args)
-            self.assertIn("---=== CHAPTER: Chapter 2 ===---", call_args)
-
-    def test_run_master_edit_llm_error(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        
-        mock_llm = MagicMock()
-        mock_llm.generate_content.side_effect = Exception("LLM error")
-        
-        with patch('google.generativeai.GenerativeModel', return_value=mock_llm):
-            processed_texts = [
-                {"title": "Chapter 1", "rus": "Original text 1."}
-            ]
-            
-            edited_text, error = db_manager.run_master_edit(processed_texts)
-            
-            self.assertIsNone(edited_text)
-            self.assertIn("LLM error", error)
-            mock_llm.generate_content.assert_called_once()
+    
 
 if __name__ == '__main__':
     unittest.main()

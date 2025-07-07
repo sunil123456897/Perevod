@@ -3,7 +3,7 @@
 import os
 import logging
 from contextlib import contextmanager
-from .models import (Project, Term, WorldBibleEntry, DictionaryProposal, 
+from Perevod.database.models import (Project, Term, WorldBibleEntry, DictionaryProposal, 
                      WorldBibleProposal, get_engine_and_session)
 
 logger = logging.getLogger("NovelTranslator.DBManager")
@@ -12,7 +12,7 @@ class DatabaseManager:
     def __init__(self, project_name):
         self.project_name = project_name
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        self.db_path = os.path.join(script_dir, '..', '_project_files', 'projects_main.db')
+        self.db_path = os.path.join(script_dir, '..', '..', '..', '_project_files', 'projects_main.db')
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.engine, self.Session = get_engine_and_session(self.db_path)
         self.project_id = self._get_or_create_project_id()
@@ -52,6 +52,20 @@ class DatabaseManager:
         with self.session_scope() as s: s.query(Term).filter_by(project_id=self.project_id, english_term=term).delete()
     def get_all_terms(self):
         with self.session_scope() as s: return [{"english_term": t.english_term, "russian_term": t.russian_term, "category": t.category} for t in s.query(Term).filter_by(project_id=self.project_id).all()]
+
+    def merge_dictionary_terms(self, primary_term_eng: str, alias_terms_eng: list) -> bool:
+        with self.session_scope() as s:
+            primary = s.query(Term).filter_by(project_id=self.project_id, english_term=primary_term_eng).first()
+            if not primary: return False
+
+            for alias_eng in alias_terms_eng:
+                alias = s.query(Term).filter_by(project_id=self.project_id, english_term=alias_eng).first()
+                if alias:
+                    # If primary term doesn't have a Russian translation, use alias's
+                    if not primary.russian_term and alias.russian_term:
+                        primary.russian_term = alias.russian_term
+                    s.delete(alias)
+            return True
 
     # --- Библия Вселенной ---
     def get_world_bible(self):
@@ -103,6 +117,10 @@ class DatabaseManager:
             } for p in s.query(DictionaryProposal).filter_by(project_id=self.project_id).all()}
     def delete_dictionary_proposal(self, term):
         with self.session_scope() as s: s.query(DictionaryProposal).filter_by(project_id=self.project_id, english_term=term).delete()
+    def count_dictionary_proposals(self):
+        with self.session_scope() as s:
+            return s.query(DictionaryProposal).filter_by(project_id=self.project_id).count()
+
     def clear_dictionary_proposals(self):
         with self.session_scope() as s: s.query(DictionaryProposal).filter_by(project_id=self.project_id).delete()
 
@@ -120,6 +138,18 @@ class DatabaseManager:
                 "category": p.category,
                 "description": p.description
             } for p in s.query(WorldBibleProposal).filter_by(project_id=self.project_id).all()}
+
+    def count_world_bible_proposals(self):
+        with self.session_scope() as s:
+            return s.query(WorldBibleProposal).filter_by(project_id=self.project_id).count()
+
+    def count_world_bible_proposals(self):
+        with self.session_scope() as s:
+            return s.query(WorldBibleProposal).filter_by(project_id=self.project_id).count()
+
+    def count_world_bible_proposals(self):
+        with self.session_scope() as s:
+            return s.query(WorldBibleProposal).filter_by(project_id=self.project_id).count()
     def delete_world_bible_proposal(self, name):
         with self.session_scope() as s: s.query(WorldBibleProposal).filter_by(project_id=self.project_id, english_name=name).delete()
     def clear_world_bible_proposals(self):
@@ -133,8 +163,15 @@ class DatabaseManager:
             for term in all_terms: terms_by_lower.setdefault(term.english_term.lower(), []).append(term)
             for terms_list in terms_by_lower.values():
                 if len(terms_list) > 1:
-                    terms_list.sort(key=lambda t: (not t.english_term[0].isupper(), len(t.english_term), t.english_term))
-                    primary_term, alias_terms = terms_list[0], terms_list[1:]
+                    # Prioritize the exact lowercase term if it exists
+                    primary_term = next((t for t in terms_list if t.english_term == t.english_term.lower()), None)
+                    if primary_term is None:
+                        # If no exact lowercase term, sort to get a consistent primary
+                        terms_list.sort(key=lambda t: (t.english_term.lower(), t.english_term))
+                        primary_term = terms_list[0]
+                    
+                    alias_terms = [t for t in terms_list if t != primary_term]
+
                     logger.info(f"Объединение дубликатов для '{primary_term.english_term}'. Псевдонимы: {[t.english_term for t in alias_terms]}")
                     for alias in alias_terms:
                         if not primary_term.russian_term and alias.russian_term: primary_term.russian_term = alias.russian_term

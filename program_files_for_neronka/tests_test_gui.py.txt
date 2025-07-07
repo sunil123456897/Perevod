@@ -3,11 +3,11 @@
 import pytest
 from unittest.mock import patch
 import customtkinter as ctk
-from gui import TranslatorGUI
+from Perevod.gui.main_window import TranslatorGUI
 
 @pytest.fixture
 def app(qtbot):
-    with patch('gui.ProjectManager'), patch('gui.DatabaseManager'), patch('gui.KnowledgeBaseManager'):
+    with patch('Perevod.project_manager.ProjectManager'), patch('Perevod.database.database_manager.DatabaseManager'), patch('Perevod.knowledge_base.knowledge_base_manager.KnowledgeBaseManager'):
         window = TranslatorGUI()
         window.withdraw()  # Hide the window
         qtbot.addWidget(window)

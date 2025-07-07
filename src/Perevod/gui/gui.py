@@ -1,0 +1,868 @@
+# gui.py
+
+import customtkinter as ctk
+from tkinter import filedialog, messagebox
+import os
+import threading
+import logging
+from graph_runner import run_translation_workflow
+from project_manager import ProjectManager
+from config import DEFAULT_SETTINGS, AVAILABLE_MODELS
+from database.database_manager import DatabaseManager
+from knowledge_base.knowledge_base_manager import KnowledgeBaseManager
+from agents.translator import simple_translate
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+gui_logger = logging.getLogger("NovelTranslator.GUI")
+
+# ======================================================================================
+# Вспомогательные классы и обработчики
+# ======================================================================================
+
+class TextHandler(logging.Handler):
+    def __init__(self, ctk_textbox):
+        super().__init__(); self.ctk_textbox = ctk_textbox
+        self.setFormatter(logging.Formatter('%(asctime)s - %(message)s', '%H:%M:%S'))
+        self.setLevel(logging.INFO)
+    def emit(self, record):
+        msg = self.format(record)
+        try:
+            if self.ctk_textbox.winfo_exists(): self.ctk_textbox.after(0, self._append_message, msg)
+        except Exception: pass
+    def _append_message(self, msg):
+        try:
+            if not self.ctk_textbox.winfo_exists(): return
+            self.ctk_textbox.configure(state="normal"); self.ctk_textbox.insert(ctk.END, msg + '\n')
+            self.ctk_textbox.see(ctk.END); self.ctk_textbox.configure(state="disabled")
+        except Exception: pass
+
+class BaseEditorWindow(ctk.CTkToplevel):
+    def __init__(self, master, title, geometry="1000x700"):
+        super().__init__(master)
+        self.title(title); self.geometry(geometry); self.minsize(800, 600)
+        self.transient(master); self.grab_set()
+
+        self.grid_columnconfigure(0, weight=1); self.grid_rowconfigure(1, weight=1)
+        
+        self.search_var = ctk.StringVar()
+        self.search_var.trace_add("write", self.filter_entries)
+        self.search_entry = ctk.CTkEntry(self, textvariable=self.search_var, placeholder_text="Поиск...")
+        self.search_entry.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+
+        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+        
+        self.button_frame = ctk.CTkFrame(self)
+        self.button_frame.grid(row=2, column=0, padx=10, pady=(5, 10), sticky="ew")
+
+    def filter_entries(self, *args):
+        raise NotImplementedError("Этот метод должен быть реализован в дочернем классе")
+
+    def _create_action_buttons(self, button_configs):
+        self.button_frame.grid_columnconfigure(list(range(len(button_configs))), weight=1)
+        for i, config in enumerate(button_configs):
+            btn = ctk.CTkButton(self.button_frame, text=config["text"], command=config["command"], fg_color=config.get("color"), hover_color=config.get("hover"))
+            btn.grid(row=0, column=i, padx=5, pady=5, sticky="ew")
+
+# ======================================================================================
+# Основной класс GUI
+# ======================================================================================
+
+class TranslatorGUI(ctk.CTk):
+    def __init__(self, cli_args=None):
+        super().__init__()
+        self.cli_args = cli_args
+        self.title("Переводчик Новелл v8.4 (Bilingual Bible)")
+        self.geometry("1200x900")
+        self.minsize(1100, 850)
+
+        self.db_manager = None
+        self.kb_manager = None
+        self.project_manager = ProjectManager()
+        self.translation_running = False
+        
+        self.settings_vars = {key: ctk.BooleanVar(value=val) if isinstance(val, bool) else ctk.StringVar(value=val) for key, val in DEFAULT_SETTINGS.items()}
+        self.settings_vars['temperature'] = ctk.DoubleVar(value=DEFAULT_SETTINGS['temperature'])
+        self.settings_vars['top_p'] = ctk.DoubleVar(value=DEFAULT_SETTINGS['top_p'])
+        
+        self.temp_label_var = ctk.StringVar(value=f"{self.settings_vars['temperature'].get():.2f}")
+        self.top_p_label_var = ctk.StringVar(value=f"{self.settings_vars['top_p'].get():.2f}")
+
+        self.create_widgets()
+        self._configure_logging()
+        self.after(100, self.load_initial_settings)
+
+    def _configure_logging(self):
+        self.log_handler = TextHandler(self.log_textbox)
+        logging.getLogger("NovelTranslator").addHandler(self.log_handler)
+
+    def create_widgets(self):
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        
+        project_frame = ctk.CTkFrame(self)
+        project_frame.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="ew")
+        project_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(project_frame, text="Проект:").grid(row=0, column=0, padx=(10, 5), pady=10)
+        self.project_combo = ctk.CTkComboBox(project_frame, variable=self.settings_vars['project_name'], state="readonly", command=self.load_selected_project)
+        self.project_combo.grid(row=0, column=1, padx=5, pady=10, sticky="ew")
+        
+        project_buttons_frame = ctk.CTkFrame(project_frame, fg_color="transparent")
+        project_buttons_frame.grid(row=0, column=2, padx=(5, 10), pady=10)
+        ctk.CTkButton(project_buttons_frame, text="Сохранить как...", width=120, command=self.save_project).pack(side=ctk.LEFT, padx=5)
+        ctk.CTkButton(project_buttons_frame, text="📂", width=30, command=self.open_project_data_folder).pack(side=ctk.LEFT, padx=5)
+        ctk.CTkButton(project_buttons_frame, text="Удалить", width=80, command=self.delete_project, fg_color="#D32F2F", hover_color="#B71C1C").pack(side=ctk.LEFT)
+
+        self.tab_view = ctk.CTkTabview(self)
+        self.tab_view.grid(row=1, column=0, padx=10, pady=5, sticky="nsew")
+        self.create_main_tab(self.tab_view.add("Основное"))
+        self.create_settings_tab(self.tab_view.add("Настройки"))
+        self.tab_view.set("Основное")
+
+        bottom_frame = ctk.CTkFrame(self)
+        bottom_frame.grid(row=2, column=0, padx=10, pady=(5,0), sticky="ew")
+        bottom_frame.grid_columnconfigure(0, weight=1)
+        progress_frame = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+        progress_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        progress_frame.grid_columnconfigure(0, weight=1)
+        self.status_var = ctk.StringVar(value="Ожидание инициализации...")
+        self.status_label = ctk.CTkLabel(progress_frame, textvariable=self.status_var, wraplength=800, anchor="w")
+        self.status_label.grid(row=0, column=0, sticky="ew")
+        self.progress_bar = ctk.CTkProgressBar(progress_frame)
+        self.progress_bar.set(0)
+        self.progress_bar.grid(row=1, column=0, pady=(5,0), sticky="ew")
+        self.log_textbox = ctk.CTkTextbox(bottom_frame, wrap=ctk.WORD, height=150, font=("Consolas", 12), state="disabled")
+        self.log_textbox.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+
+        actions_frame = ctk.CTkFrame(self, fg_color="transparent")
+        actions_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+        actions_frame.grid_columnconfigure(list(range(4)), weight=1)
+        
+        self.init_button = ctk.CTkButton(actions_frame, text="Инициализировать", height=40, command=self.initialize_translator_gui)
+        self.init_button.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        self.start_button = ctk.CTkButton(actions_frame, text="▶ Перевести", height=40, command=self.start_translation, state=ctk.DISABLED, fg_color="#2E7D32", hover_color="#1B5E20")
+        self.start_button.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.dict_button = ctk.CTkButton(actions_frame, text="Словарь", height=40, command=self.open_dictionary_editor, state=ctk.DISABLED)
+        self.dict_button.grid(row=0, column=2, padx=5, pady=5, sticky="ew")
+        self.bible_button = ctk.CTkButton(actions_frame, text="Библия Вселенной", height=40, command=self.open_bible_editor, state=ctk.DISABLED)
+        self.bible_button.grid(row=0, column=3, padx=5, pady=5, sticky="ew")
+
+    def create_main_tab(self, tab):
+        tab.grid_columnconfigure(1, weight=1)
+        paths = { "API ключ Gemini:": 'api_key', "Директория с главами (Проект):": 'input_dir', "Директория для перевода (Проект):": 'output_dir'}
+        for i, (label, key) in enumerate(paths.items()):
+            ctk.CTkLabel(tab, text=label).grid(row=i, column=0, padx=10, pady=10, sticky="w")
+            entry = ctk.CTkEntry(tab, textvariable=self.settings_vars[key], width=400)
+            entry.grid(row=i, column=1, padx=10, pady=10, sticky="ew")
+            if "Директория" in label:
+                ctk.CTkButton(tab, text="Выбрать...", command=lambda k=key: self.browse_directory(k)).grid(row=i, column=2, padx=10, pady=10)
+
+    def create_settings_tab(self, tab):
+        tab.grid_columnconfigure((0, 1), weight=1)
+        left_frame = ctk.CTkFrame(tab); left_frame.grid(row=0, column=0, padx=10, pady=10, sticky="nsew"); left_frame.grid_columnconfigure(1, weight=1)
+        right_frame = ctk.CTkFrame(tab); right_frame.grid(row=0, column=1, padx=10, pady=10, sticky="nsew"); right_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(left_frame, text="Настройки процесса", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=3, pady=(5,10), sticky="w", padx=10)
+        ctk.CTkSwitch(left_frame, text="Перезаписывать существующие переводы", variable=self.settings_vars['overwrite_existing']).grid(row=1, column=0, columnspan=3, padx=10, pady=5, sticky="w")
+        ctk.CTkLabel(left_frame, text="Модель для перевода:").grid(row=2, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkComboBox(left_frame, variable=self.settings_vars['model_name'], values=AVAILABLE_MODELS).grid(row=2, column=1, columnspan=2, padx=10, pady=10, sticky="ew")
+        ctk.CTkLabel(left_frame, text="Температура:").grid(row=3, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkSlider(left_frame, from_=0, to=1, variable=self.settings_vars['temperature'], command=lambda v: self.temp_label_var.set(f"{v:.2f}")).grid(row=3, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkLabel(left_frame, textvariable=self.temp_label_var).grid(row=3, column=2, padx=10)
+        ctk.CTkLabel(left_frame, text="Top P:").grid(row=4, column=0, padx=10, pady=10, sticky="w")
+        ctk.CTkSlider(left_frame, from_=0, to=1, variable=self.settings_vars['top_p'], command=lambda v: self.top_p_label_var.set(f"{v:.2f}")).grid(row=4, column=1, padx=10, pady=10, sticky="ew")
+        ctk.CTkLabel(left_frame, textvariable=self.top_p_label_var).grid(row=4, column=2, padx=10)
+
+        ctk.CTkLabel(right_frame, text="Настройки Базы Знаний", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, pady=(5,10), sticky="w", padx=10)
+        ctk.CTkSwitch(right_frame, text="Авто-пополнение словаря (NER)", variable=self.settings_vars['enable_smart_dictionary_update']).grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        ctk.CTkSwitch(right_frame, text="Авто-анализ Библии Вселенной", variable=self.settings_vars['enable_bible_analysis']).grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.build_index_button = ctk.CTkButton(right_frame, text="🧠 Перестроить семантический индекс", command=self.build_semantic_index_gui, state=ctk.DISABLED, fg_color="#6A1B9A", hover_color="#4A148C")
+        self.build_index_button.grid(row=3, column=0, padx=10, pady=20, sticky="ew")
+        self.index_status_label = ctk.CTkLabel(right_frame, text="Индекс: Н/Д", font=ctk.CTkFont(size=11))
+        self.index_status_label.grid(row=4, column=0, padx=10, pady=5, sticky="ew")
+
+    def browse_directory(self, key):
+        if directory := filedialog.askdirectory(): self.settings_vars[key].set(directory)
+
+    def get_current_settings_from_ui(self):
+        return {key: var.get() for key, var in self.settings_vars.items()}
+
+    def update_ui_for_translation_state(self, is_running):
+        state = ctk.DISABLED if is_running else ctk.NORMAL
+        self.start_button.configure(text="⏹ Остановить" if is_running else "▶ Перевести", fg_color=("#B71C1C" if is_running else "#2E7D32"), hover_color=("#D32F2F" if is_running else "#1B5E20"))
+        for button in [self.init_button, self.dict_button, self.bible_button, self.build_index_button]: button.configure(state=state)
+        self.project_combo.configure(state="disabled" if is_running else "readonly")
+
+    def update_progress(self, value, text):
+        if self.winfo_exists():
+            self.progress_bar.set(value / 100); self.status_var.set(text); self.update_idletasks()
+
+    def load_initial_settings(self):
+        self.update_project_list()
+        project_to_load = (self.cli_args.project if self.cli_args and self.cli_args.project else "Default")
+        if project_to_load in self.project_manager.get_project_names():
+            self.settings_vars['project_name'].set(project_to_load)
+        self.load_project_settings(self.settings_vars['project_name'].get())
+
+    def update_project_list(self):
+        project_names = self.project_manager.get_project_names()
+        if not project_names:
+            self.project_combo.configure(values=["Default"])
+            self.settings_vars['project_name'].set("Default")
+        else:
+            self.project_combo.configure(values=["Default"] + project_names)
+
+    def load_project_settings(self, name):
+        gui_logger.info(f"Загрузка проекта: {name}")
+        settings = self.project_manager.get_project_settings(name)
+        for key, value in settings.items():
+            if key in self.settings_vars: self.settings_vars[key].set(value)
+        self.temp_label_var.set(f"{self.settings_vars['temperature'].get():.2f}")
+        self.top_p_label_var.set(f"{self.settings_vars['top_p'].get():.2f}")
+
+    def load_selected_project(self, selected_name):
+        self.load_project_settings(selected_name); self.initialize_translator_gui()
+
+    def save_project(self):
+        if not (project_name := ctk.CTkInputDialog(text="Введите имя проекта:", title="Сохранить проект").get_input()): return
+        settings = self.get_current_settings_from_ui(); settings['project_name'] = project_name
+        if self.project_manager.add_or_update_project(project_name, settings):
+            gui_logger.info(f"Проект '{project_name}' успешно сохранен.")
+            self.update_project_list(); self.settings_vars['project_name'].set(project_name)
+        else: messagebox.showerror("Ошибка", f"Не удалось сохранить проект '{project_name}'.")
+
+    def delete_project(self):
+        name = self.settings_vars['project_name'].get()
+        if name == "Default": messagebox.showwarning("Внимание", "Нельзя удалить проект 'Default'."); return
+        if messagebox.askyesno("Подтверждение", f"Вы уверены, что хотите удалить проект '{name}'? Это действие необратимо."):
+            if self.project_manager.delete_project(name):
+                gui_logger.info(f"Проект '{name}' удален.")
+                self.update_project_list(); self.settings_vars['project_name'].set("Default"); self.load_project_settings("Default")
+            else: messagebox.showerror("Ошибка", f"Не удалось удалить проект '{name}'.")
+
+    def open_project_data_folder(self):
+        project_name = self.settings_vars['project_name'].get()
+        if project_name == "Default": messagebox.showinfo("Информация", "У проекта 'Default' нет своей папки данных."); return
+        path = os.path.join(PROJECT_ROOT, '_project_files', project_name); os.makedirs(path, exist_ok=True)
+        try: os.startfile(path)
+        except AttributeError: import subprocess; subprocess.run(['xdg-open', path])
+
+    def initialize_translator_gui(self):
+        self.update_progress(0, "Инициализация..."); threading.Thread(target=self._initialize_thread, daemon=True).start()
+
+    def _initialize_thread(self):
+        """
+        Инициализирует менеджеры баз данных и знаний в отдельном потоке,
+        чтобы не блокировать графический интерфейс.
+        """
+        try:
+            project_name = self.settings_vars['project_name'].get()
+            if project_name == "Default":
+                self.update_progress(100, "Выберите или создайте проект для начала работы.")
+                for btn in [self.start_button, self.dict_button, self.bible_button, self.build_index_button]: btn.configure(state=ctk.DISABLED)
+                return
+            self.db_manager = DatabaseManager(project_name)
+            self.kb_manager = KnowledgeBaseManager(project_name, self.settings_vars['api_key'].get(), self.settings_vars['embedding_model_name'].get())
+            self.after(0, self.update_index_status)
+            self.update_progress(100, "Инициализация завершена. Готов к переводу.")
+            for btn in [self.start_button, self.dict_button, self.bible_button, self.build_index_button]: btn.configure(state=ctk.NORMAL)
+        except Exception as e:
+            gui_logger.error(f"Ошибка инициализации: {e}", exc_info=True); self.update_progress(0, f"Ошибка инициализации: {e}")
+
+    def update_index_status(self):
+        if self.kb_manager and self.kb_manager.collection: self.index_status_label.configure(text=f"Индекс: {self.kb_manager.collection.count()} записей")
+        else: self.index_status_label.configure(text="Индекс: Н/Д")
+
+    def build_semantic_index_gui(self):
+        if messagebox.askyesno("Подтверждение", "Перестроить семантический индекс? Это может занять время и токены API."):
+            self.update_progress(0, "Начало перестройки индекса..."); threading.Thread(target=self._build_index_thread, daemon=True).start()
+
+    def _build_index_thread(self):
+        """
+        Выполняет перестроение семантического индекса в отдельном потоке.
+        """
+        try:
+            self.kb_manager.rebuild_index_from_db(self.db_manager, progress_callback=self.update_progress)
+            self.after(0, self.update_index_status)
+        except Exception as e:
+            gui_logger.error(f"Ошибка построения индекса: {e}", exc_info=True); self.update_progress(0, f"Ошибка индексации: {e}")
+
+    def start_translation(self):
+        if self.translation_running: gui_logger.warning("Остановка перевода еще не реализована."); return
+        settings = self.get_current_settings_from_ui()
+        if not all([settings.get('api_key'), settings.get('input_dir'), settings.get('output_dir')]):
+            messagebox.showerror("Ошибка", "Пожалуйста, заполните API ключ и обе директории на вкладке 'Основное'."); return
+        threading.Thread(target=self._translation_thread, daemon=True).start()
+
+    def _translation_thread(self):
+        """
+        Запускает полный цикл перевода в отдельном потоке,
+        обрабатывая возможные ошибки и обновляя GUI.
+        """
+        self.translation_running = True; self.after(0, self.update_ui_for_translation_state, True)
+        try:
+            project_name = self.settings_vars['project_name'].get(); settings = self.get_current_settings_from_ui()
+            final_state = run_translation_workflow(project_name, settings_overrides=settings, progress_callback=self.update_progress)
+            if final_state.get("error"): raise Exception(final_state["error"])
+            self.update_progress(100, f"Перевод и аудит успешно завершены! Обработано глав: {len(final_state.get('processed_chapters', []))}")
+            gui_logger.info("Полный цикл перевода и аудита успешно завершен.")
+        except Exception as e:
+            error_message = f"Критическая ошибка в графе: {e}"; gui_logger.error(error_message, exc_info=True)
+            self.after(0, self.update_progress, 0, f"Ошибка: {e}"); self.after(0, messagebox.showerror, "Ошибка Перевода", error_message)
+        finally:
+            self.translation_running = False; self.after(0, self.update_ui_for_translation_state, False)
+
+    def open_dictionary_editor(self):
+        if self.db_manager: DictionaryEditorWindow(self, self.db_manager)
+        else: messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
+
+    def open_bible_editor(self):
+        if self.db_manager: WorldBibleEditorWindow(self, self.db_manager, self.settings_vars['api_key'].get(), self.settings_vars['model_name'].get())
+        else: messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
+
+# ======================================================================================
+# Окна-редакторы (АРХИТЕКТУРА С ПАГИНАЦИЕЙ)
+# ======================================================================================
+
+class DictionaryEditorWindow(BaseEditorWindow):
+    def __init__(self, master, db_manager):
+        super().__init__(master, "Редактор Словаря")
+        self.db_manager = db_manager
+        self.all_terms = []
+        self.all_proposals = []
+        self.term_widgets = {} 
+        self.current_page_terms = 1
+        self.current_page_proposals = 1
+        self.items_per_page = 50
+
+        self._create_widgets()
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+
+    def _create_widgets(self):
+        self.tab_view.add("Словарь")
+        self.tab_view.add("Предложения")
+        self.tab_view.set("Словарь")
+        self.tab_view.configure(command=self.on_tab_change)
+
+        # --- Вкладка "Словарь" ---
+        terms_frame = self.tab_view.tab("Словарь")
+        terms_frame.grid_columnconfigure(0, weight=1); terms_frame.grid_rowconfigure(1, weight=1)
+        
+        terms_controls = ctk.CTkFrame(terms_frame, fg_color="transparent")
+        terms_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        terms_controls.grid_columnconfigure(1, weight=1)
+        self.add_term_btn = ctk.CTkButton(terms_controls, text="Добавить новый термин", command=self.add_new_term)
+        self.add_term_btn.grid(row=0, column=0, padx=(0,5))
+        self.save_terms_btn = ctk.CTkButton(terms_controls, text="Сохранить все изменения", command=self.save_all_terms, fg_color="#2E7D32", hover_color="#1B5E20")
+        self.save_terms_btn.grid(row=0, column=2, padx=(5,0))
+
+        self.terms_content_frame = ctk.CTkScrollableFrame(terms_frame, label_text="Принятые термины")
+        self.terms_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.terms_content_frame.grid_columnconfigure((0, 1), weight=1)
+
+        self.terms_nav_frame = ctk.CTkFrame(terms_frame, fg_color="transparent")
+        self.terms_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.terms_nav_frame.grid_columnconfigure(1, weight=1)
+        self.prev_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="< Назад", command=lambda: self.change_page_terms(-1))
+        self.prev_terms_btn.grid(row=0, column=0)
+        self.page_label_terms = ctk.CTkLabel(self.terms_nav_frame, text="Страница 1 / 1")
+        self.page_label_terms.grid(row=0, column=1)
+        self.next_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="Вперед >", command=lambda: self.change_page_terms(1))
+        self.next_terms_btn.grid(row=0, column=2)
+
+        # --- Вкладка "Предложения" ---
+        proposals_frame = self.tab_view.tab("Предложения")
+        proposals_frame.grid_columnconfigure(0, weight=1); proposals_frame.grid_rowconfigure(1, weight=1)
+
+        proposals_controls = ctk.CTkFrame(proposals_frame, fg_color="transparent")
+        proposals_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        proposals_controls.grid_columnconfigure(1, weight=1)
+        self.accept_all_btn = ctk.CTkButton(proposals_controls, text="✓ Принять все", command=self.accept_all_proposals, fg_color="#2E7D32", hover_color="#1B5E20")
+        self.accept_all_btn.grid(row=0, column=0, padx=(0,5))
+        self.reject_all_btn = ctk.CTkButton(proposals_controls, text="✗ Отклонить все", command=self.reject_all_proposals, fg_color="#D32F2F", hover_color="#B71C1C")
+        self.reject_all_btn.grid(row=0, column=2, padx=(5,0))
+
+        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_frame, label_text="Предложения от ИИ")
+        self.proposals_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.proposals_content_frame.grid_columnconfigure(0, weight=1)
+
+        self.proposals_nav_frame = ctk.CTkFrame(proposals_frame, fg_color="transparent")
+        self.proposals_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.proposals_nav_frame.grid_columnconfigure(1, weight=1)
+        self.prev_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="< Назад", command=lambda: self.change_page_proposals(-1))
+        self.prev_proposals_btn.grid(row=0, column=0)
+        self.page_label_proposals = ctk.CTkLabel(self.proposals_nav_frame, text="Страница 1 / 1")
+        self.page_label_proposals.grid(row=0, column=1)
+        self.next_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="Вперед >", command=lambda: self.change_page_proposals(1))
+        self.next_proposals_btn.grid(row=0, column=2)
+
+        self._create_action_buttons([{"text": "Закрыть", "command": self.destroy}])
+
+    def _load_data_thread(self):
+        try:
+            db_terms = self.db_manager.get_all_terms()
+            db_proposals = list(self.db_manager.get_dictionary_proposals().values())
+            self.after(0, self._populate_ui, db_terms, db_proposals)
+        except Exception as e:
+            gui_logger.error(f"Ошибка загрузки данных словаря: {e}", exc_info=True)
+            self.after(0, messagebox.showerror, "Ошибка", f"Не удалось загрузить данные словаря: {e}")
+
+    def _populate_ui(self, terms, proposals):
+        self.all_terms = sorted(terms, key=lambda x: x['english_term'].lower())
+        self.all_proposals = sorted(proposals, key=lambda x: x['english_term'].lower())
+        self.term_widgets = {}
+        for term in self.all_terms:
+            term['is_new'] = False
+            term['is_modified'] = False
+            self.term_widgets[term['english_term']] = {'eng_var': ctk.StringVar(value=term['english_term']), 'rus_var': ctk.StringVar(value=term['russian_term'])}
+
+        self.current_page_terms = 1
+        self.current_page_proposals = 1
+        self.filter_entries()
+
+    def on_tab_change(self):
+        self.filter_entries()
+
+    def render_terms_page(self, terms_to_render):
+        for widget in self.terms_content_frame.winfo_children(): widget.destroy()
+        ctk.CTkLabel(self.terms_content_frame, text="Английский термин", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(self.terms_content_frame, text="Русский перевод", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        start_index = (self.current_page_terms - 1) * self.items_per_page
+        end_index = start_index + self.items_per_page
+        page_terms = terms_to_render[start_index:end_index]
+
+        for i, term_data in enumerate(page_terms):
+            original_eng = term_data['english_term']
+            widget_vars = self.term_widgets[original_eng]
+            
+            eng_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['eng_var'])
+            eng_entry.grid(row=i + 1, column=0, padx=5, pady=2, sticky="ew")
+            rus_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['rus_var'])
+            rus_entry.grid(row=i + 1, column=1, padx=5, pady=2, sticky="ew")
+            
+            widget_vars['eng_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+            widget_vars['rus_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+
+            delete_btn = ctk.CTkButton(self.terms_content_frame, text="X", width=25, command=lambda oe=original_eng: self.delete_term(oe))
+            delete_btn.grid(row=i + 1, column=2, padx=5, pady=2)
+
+        total_pages = (len(terms_to_render) + self.items_per_page - 1) // self.items_per_page
+        self.page_label_terms.configure(text=f"Страница {self.current_page_terms} / {max(1, total_pages)}")
+        self.prev_terms_btn.configure(state="normal" if self.current_page_terms > 1 else "disabled")
+        self.next_terms_btn.configure(state="normal" if self.current_page_terms < total_pages else "disabled")
+
+    def render_proposals_page(self, proposals_to_render):
+        for widget in self.proposals_content_frame.winfo_children(): widget.destroy()
+        ctk.CTkLabel(self.proposals_content_frame, text="Предложенный термин (Англ -> Рус)", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        start_index = (self.current_page_proposals - 1) * self.items_per_page
+        end_index = start_index + self.items_per_page
+        page_proposals = proposals_to_render[start_index:end_index]
+
+        for i, data in enumerate(page_proposals):
+            eng = data['english_term']
+            frame = ctk.CTkFrame(self.proposals_content_frame, fg_color="transparent")
+            frame.grid(row=i + 1, column=0, columnspan=3, sticky="ew", pady=2)
+            frame.grid_columnconfigure(0, weight=1)
+            label_text = f"{eng}  →  {data['russian_term']} (conf: {data.get('confidence', 0):.2f})"
+            label = ctk.CTkLabel(frame, text=label_text, anchor="w"); label.grid(row=0, column=0, sticky="ew", padx=5)
+            btn_accept = ctk.CTkButton(frame, text="✓", width=25, command=lambda e=eng, d=data: self.accept_proposal(e, d['russian_term'], d['category']))
+            btn_accept.grid(row=0, column=1, padx=(0, 5))
+            btn_reject = ctk.CTkButton(frame, text="✗", width=25, command=lambda e=eng: self.reject_proposal(e))
+            btn_reject.grid(row=0, column=2, padx=(0, 5))
+
+        total_pages = (len(proposals_to_render) + self.items_per_page - 1) // self.items_per_page
+        self.page_label_proposals.configure(text=f"Страница {self.current_page_proposals} / {max(1, total_pages)}")
+        self.prev_proposals_btn.configure(state="normal" if self.current_page_proposals > 1 else "disabled")
+        self.next_proposals_btn.configure(state="normal" if self.current_page_proposals < total_pages else "disabled")
+
+    def mark_as_modified(self, original_eng):
+        term = next((t for t in self.all_terms if t['english_term'] == original_eng), None)
+        if term: term['is_modified'] = True
+
+    def add_new_term(self):
+        new_term_id = f"__new_{len([t for t in self.all_terms if t.get('is_new')])}"
+        new_term = {'english_term': new_term_id, 'russian_term': '', 'category': 'other', 'is_new': True, 'is_modified': True}
+        self.all_terms.insert(0, new_term)
+        self.term_widgets[new_term_id] = {'eng_var': ctk.StringVar(value=''), 'rus_var': ctk.StringVar(value='')}
+        self.filter_entries()
+
+    def save_all_terms(self):
+        try:
+            for term_data in self.all_terms:
+                if not term_data.get('is_modified'): continue
+                
+                original_eng = term_data['english_term']
+                widget_vars = self.term_widgets[original_eng]
+                new_eng = widget_vars['eng_var'].get().strip()
+                new_rus = widget_vars['rus_var'].get().strip()
+
+                if term_data.get('is_new'):
+                    if new_eng and new_rus:
+                        self.db_manager.add_or_update_term(new_eng, new_rus, term_data['category'])
+                elif new_eng and new_rus:
+                    if original_eng != new_eng:
+                        self.db_manager.delete_term(original_eng)
+                    self.db_manager.add_or_update_term(new_eng, new_rus, term_data['category'])
+                else: # Term was deleted
+                    self.db_manager.delete_term(original_eng)
+
+            gui_logger.info("Словарь сохранен."); threading.Thread(target=self._load_data_thread, daemon=True).start()
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить словарь: {e}")
+            gui_logger.error(f"Ошибка сохранения словаря: {e}", exc_info=True)
+
+    def delete_term(self, original_eng):
+        self.all_terms = [t for t in self.all_terms if t['english_term'] != original_eng]
+        self.term_widgets.pop(original_eng, None)
+        self.db_manager.delete_term(original_eng) # Direct delete for simplicity
+        self.filter_entries()
+
+    def accept_proposal(self, eng, rus, cat):
+        self.db_manager.add_or_update_term(eng, rus, cat)
+        self.db_manager.delete_dictionary_proposal(eng)
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+    def reject_proposal(self, eng):
+        self.db_manager.delete_dictionary_proposal(eng)
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+    def accept_all_proposals(self):
+        if messagebox.askyesno("Подтверждение", "Принять все видимые предложения?"):
+            for p in self.all_proposals:
+                self.db_manager.add_or_update_term(p['english_term'], p['russian_term'], p['category'])
+            self.db_manager.clear_dictionary_proposals()
+            threading.Thread(target=self._load_data_thread, daemon=True).start()
+    def reject_all_proposals(self):
+        if messagebox.askyesno("Подтверждение", "Отклонить все предложения?"):
+            self.db_manager.clear_dictionary_proposals()
+            threading.Thread(target=self._load_data_thread, daemon=True).start()
+
+    def filter_entries(self, *args):
+        query = self.search_var.get().lower()
+        
+        # Фильтрация для Словаря
+        filtered_terms = [t for t in self.all_terms if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
+        self.current_page_terms = 1
+        self.render_terms_page(filtered_terms)
+
+        # Фильтрация для Предложений
+        filtered_proposals = [p for p in self.all_proposals if query in p['english_term'].lower() or query in p['russian_term'].lower()]
+        self.current_page_proposals = 1
+        self.render_proposals_page(filtered_proposals)
+
+    def change_page_terms(self, delta):
+        query = self.search_var.get().lower()
+        filtered_terms = [t for t in self.all_terms if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
+        total_pages = (len(filtered_terms) + self.items_per_page - 1) // self.items_per_page
+        new_page = self.current_page_terms + delta
+        if 1 <= new_page <= total_pages:
+            self.current_page_terms = new_page
+            self.render_terms_page(filtered_terms)
+
+    def change_page_proposals(self, delta):
+        query = self.search_var.get().lower()
+        filtered_proposals = [p for p in self.all_proposals if query in p['english_term'].lower() or query in p['russian_term'].lower()]
+        total_pages = (len(filtered_proposals) + self.items_per_page - 1) // self.items_per_page
+        new_page = self.current_page_proposals + delta
+        if 1 <= new_page <= total_pages:
+            self.current_page_proposals = new_page
+            self.render_proposals_page(filtered_proposals)
+
+class WorldBibleEditorWindow(BaseEditorWindow):
+    def __init__(self, master, db_manager, api_key, model_name):
+        super().__init__(master, "Редактор Библии Вселенной", "1200x800")
+        self.db_manager = db_manager
+        self.api_key = api_key
+        self.model_name = model_name
+        self.all_entries = []
+        self.all_proposals = []
+        self.entry_widgets = {}
+        self.current_page_entries = 1
+        self.current_page_proposals = 1
+        self.items_per_page = 10
+
+        self._create_widgets()
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+
+    def _create_widgets(self):
+        self.tab_view.add("Библия")
+        self.tab_view.add("Предложения")
+        self.tab_view.set("Библия")
+        self.tab_view.configure(command=self.on_tab_change)
+
+        # --- Вкладка "Библия" ---
+        entries_frame = self.tab_view.tab("Библия")
+        entries_frame.grid_columnconfigure(0, weight=1); entries_frame.grid_rowconfigure(1, weight=1)
+        
+        entries_controls = ctk.CTkFrame(entries_frame, fg_color="transparent")
+        entries_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        entries_controls.grid_columnconfigure(1, weight=1)
+        self.add_entry_btn = ctk.CTkButton(entries_controls, text="Добавить новую запись", command=self.add_new_entry)
+        self.add_entry_btn.grid(row=0, column=0, padx=(0,5))
+        self.save_entries_btn = ctk.CTkButton(entries_controls, text="Сохранить все изменения", command=self.save_all_entries, fg_color="#2E7D32", hover_color="#1B5E20")
+        self.save_entries_btn.grid(row=0, column=2, padx=(5,0))
+
+        self.entries_content_frame = ctk.CTkScrollableFrame(entries_frame, label_text="Принятые записи")
+        self.entries_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.entries_content_frame.grid_columnconfigure(0, weight=1)
+
+        self.entries_nav_frame = ctk.CTkFrame(entries_frame, fg_color="transparent")
+        self.entries_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.entries_nav_frame.grid_columnconfigure(1, weight=1)
+        self.prev_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="< Назад", command=lambda: self.change_page_entries(-1))
+        self.prev_entries_btn.grid(row=0, column=0)
+        self.page_label_entries = ctk.CTkLabel(self.entries_nav_frame, text="Страница 1 / 1")
+        self.page_label_entries.grid(row=0, column=1)
+        self.next_entries_btn = ctk.CTkButton(self.entries_nav_frame, text="Вперед >", command=lambda: self.change_page_entries(1))
+        self.next_entries_btn.grid(row=0, column=2)
+
+        # --- Вкладка "Предложения" ---
+        proposals_frame = self.tab_view.tab("Предложения")
+        proposals_frame.grid_columnconfigure(0, weight=1); proposals_frame.grid_rowconfigure(1, weight=1)
+
+        proposals_controls = ctk.CTkFrame(proposals_frame, fg_color="transparent")
+        proposals_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        proposals_controls.grid_columnconfigure(1, weight=1)
+        self.accept_all_prop_btn = ctk.CTkButton(proposals_controls, text="✓ Принять все", command=self.accept_all_proposals, fg_color="#2E7D32", hover_color="#1B5E20")
+        self.accept_all_prop_btn.grid(row=0, column=0, padx=(0,5))
+        self.reject_all_prop_btn = ctk.CTkButton(proposals_controls, text="✗ Отклонить все", command=self.reject_all_proposals, fg_color="#D32F2F", hover_color="#B71C1C")
+        self.reject_all_prop_btn.grid(row=0, column=2, padx=(5,0))
+
+        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_frame, label_text="Предложения от ИИ")
+        self.proposals_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.proposals_content_frame.grid_columnconfigure(0, weight=1)
+
+        self.proposals_nav_frame = ctk.CTkFrame(proposals_frame, fg_color="transparent")
+        self.proposals_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
+        self.proposals_nav_frame.grid_columnconfigure(1, weight=1)
+        self.prev_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="< Назад", command=lambda: self.change_page_proposals(-1))
+        self.prev_proposals_btn.grid(row=0, column=0)
+        self.page_label_proposals = ctk.CTkLabel(self.proposals_nav_frame, text="Страница 1 / 1")
+        self.page_label_proposals.grid(row=0, column=1)
+        self.next_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="Вперед >", command=lambda: self.change_page_proposals(1))
+        self.next_proposals_btn.grid(row=0, column=2)
+
+        self._create_action_buttons([{"text": "Закрыть", "command": self.destroy}])
+
+    def _load_data_thread(self):
+        try:
+            db_entries = self.db_manager.get_all_world_bible_entries()
+            db_proposals = list(self.db_manager.get_world_bible_proposals().values())
+            self.after(0, self._populate_ui, db_entries, db_proposals)
+        except Exception as e:
+            gui_logger.error(f"Ошибка загрузки данных Библии: {e}", exc_info=True)
+            self.after(0, messagebox.showerror, "Ошибка", f"Не удалось загрузить данные Библии: {e}")
+
+    def _populate_ui(self, entries, proposals):
+        self.all_entries = sorted(entries, key=lambda x: x['english_name'].lower())
+        self.all_proposals = sorted(proposals, key=lambda x: x['english_name'].lower())
+        self.entry_widgets = {}
+        for entry in self.all_entries:
+            entry['is_new'] = False
+            entry['is_modified'] = False
+            self.entry_widgets[entry['english_name']] = {
+                'eng_var': ctk.StringVar(value=entry['english_name']),
+                'rus_var': ctk.StringVar(value=entry.get('russian_name', '')),
+                'cat_var': ctk.StringVar(value=entry.get('category', '')),
+                'desc_eng_text': entry.get('description', ''),
+                'desc_rus_text': entry.get('russian_description', '')
+            }
+        self.current_page_entries = 1
+        self.current_page_proposals = 1
+        self.filter_entries()
+
+    def on_tab_change(self):
+        self.filter_entries()
+
+    def render_entries_page(self, entries_to_render):
+        for widget in self.entries_content_frame.winfo_children(): widget.destroy()
+        
+        start_index = (self.current_page_entries - 1) * self.items_per_page
+        end_index = start_index + self.items_per_page
+        page_entries = entries_to_render[start_index:end_index]
+
+        for i, entry_data in enumerate(page_entries):
+            self.create_entry_widget(entry_data, i)
+
+        total_pages = (len(entries_to_render) + self.items_per_page - 1) // self.items_per_page
+        self.page_label_entries.configure(text=f"Страница {self.current_page_entries} / {max(1, total_pages)}")
+        self.prev_entries_btn.configure(state="normal" if self.current_page_entries > 1 else "disabled")
+        self.next_entries_btn.configure(state="normal" if self.current_page_entries < total_pages else "disabled")
+
+    def create_entry_widget(self, entry_data, index):
+        original_eng = entry_data['english_name']
+        widget_vars = self.entry_widgets[original_eng]
+
+        frame = ctk.CTkFrame(self.entries_content_frame, border_width=1); frame.grid(row=index, column=0, padx=5, pady=5, sticky="ew"); frame.grid_columnconfigure(0, weight=1)
+        
+        top = ctk.CTkFrame(frame, fg_color="transparent"); top.grid(row=0, column=0, sticky="ew"); top.grid_columnconfigure((1, 3), weight=1)
+        ctk.CTkLabel(top, text="Англ:").grid(row=0, column=0, padx=(5,2)); eng_entry = ctk.CTkEntry(top, textvariable=widget_vars['eng_var']); eng_entry.grid(row=0, column=1, padx=(0,10), sticky="ew")
+        ctk.CTkLabel(top, text="Рус:").grid(row=0, column=2, padx=(5,2)); rus_entry = ctk.CTkEntry(top, textvariable=widget_vars['rus_var']); rus_entry.grid(row=0, column=3, padx=(0,10), sticky="ew")
+        ctk.CTkLabel(top, text="Кат:").grid(row=0, column=4, padx=(5,2)); cat_entry = ctk.CTkEntry(top, textvariable=widget_vars['cat_var'], width=120); cat_entry.grid(row=0, column=5, padx=(0,5))
+
+        desc_frame = ctk.CTkFrame(frame, fg_color="transparent"); desc_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5); desc_frame.grid_columnconfigure(0, weight=1)
+        
+        ctk.CTkLabel(desc_frame, text="Описание (Англ):").grid(row=0, column=0, sticky="w")
+        desc_eng = ctk.CTkTextbox(desc_frame, height=80, wrap="word"); desc_eng.grid(row=1, column=0, sticky="ew"); desc_eng.insert("1.0", widget_vars['desc_eng_text'] or "")
+        widget_vars['desc_eng_textbox'] = desc_eng
+
+        translate_btn_frame = ctk.CTkFrame(desc_frame, fg_color="transparent"); translate_btn_frame.grid(row=2, column=0, sticky="ew"); translate_btn_frame.grid_columnconfigure(0, weight=1)
+        translate_btn = ctk.CTkButton(translate_btn_frame, text="▼ Перевести ▼", command=lambda we=widget_vars: self.translate_description(we))
+        translate_btn.grid(row=0, column=0, pady=2)
+
+        ctk.CTkLabel(desc_frame, text="Описание (Рус):").grid(row=3, column=0, sticky="w")
+        desc_rus = ctk.CTkTextbox(desc_frame, height=80, wrap="word"); desc_rus.grid(row=4, column=0, sticky="ew"); desc_rus.insert("1.0", widget_vars['desc_rus_text'] or "")
+        widget_vars['desc_rus_textbox'] = desc_rus
+
+        # Trace changes
+        widget_vars['eng_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+        widget_vars['rus_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+        widget_vars['cat_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+        desc_eng.bind("<KeyRelease>", lambda event, oe=original_eng: self.mark_as_modified(oe))
+        desc_rus.bind("<KeyRelease>", lambda event, oe=original_eng: self.mark_as_modified(oe))
+
+        bottom = ctk.CTkFrame(frame, fg_color="transparent"); bottom.grid(row=2, column=0, sticky="ew", padx=5, pady=5); bottom.grid_columnconfigure(0, weight=1)
+        del_btn = ctk.CTkButton(bottom, text="Удалить", width=80, fg_color="#D32F2F", hover_color="#B71C1C", command=lambda n=original_eng: self.delete_entry(n)); del_btn.grid(row=0, column=0, sticky="e")
+
+    def translate_description(self, widget_vars):
+        eng_text = widget_vars['desc_eng_textbox'].get("1.0", "end-1c").strip()
+        if not eng_text:
+            messagebox.showinfo("Информация", "Поле с английским описанием пустое.")
+            return
+        
+        widget_vars['desc_rus_textbox'].delete("1.0", ctk.END)
+        widget_vars['desc_rus_textbox'].insert("1.0", "Перевод...")
+        
+        def _translate_thread():
+            translated_text = simple_translate(eng_text, self.api_key, self.model_name)
+            self.after(0, lambda: widget_vars['desc_rus_textbox'].delete("1.0", ctk.END))
+            self.after(0, lambda: widget_vars['desc_rus_textbox'].insert("1.0", translated_text))
+
+        threading.Thread(target=_translate_thread, daemon=True).start()
+
+    def render_proposals_page(self, proposals_to_render):
+        for widget in self.proposals_content_frame.winfo_children(): widget.destroy()
+        ctk.CTkLabel(self.proposals_content_frame, text="Предложенная запись", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        start_index = (self.current_page_proposals - 1) * self.items_per_page
+        end_index = start_index + self.items_per_page
+        page_proposals = proposals_to_render[start_index:end_index]
+
+        for i, data in enumerate(page_proposals):
+            eng = data['english_name']
+            frame = ctk.CTkFrame(self.proposals_content_frame, border_width=1); frame.grid(row=i + 1, column=0, sticky="ew", pady=2, padx=5); frame.grid_columnconfigure(0, weight=1)
+            label_text = f"{eng} ({data['category']})"; label = ctk.CTkLabel(frame, text=label_text, anchor="w"); label.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
+            desc_text = ctk.CTkLabel(frame, text=data['description'], wraplength=700, justify="left", anchor="w", fg_color="gray20", corner_radius=5); desc_text.grid(row=1, column=0, sticky="ew", padx=5, pady=2)
+            btn_frame = ctk.CTkFrame(frame, fg_color="transparent"); btn_frame.grid(row=0, column=1, rowspan=2, sticky="e");
+            btn_accept = ctk.CTkButton(btn_frame, text="✓ Принять", width=100, command=lambda e=eng, d=data: self.accept_proposal(e, d)); btn_accept.pack(padx=5, pady=2)
+            btn_reject = ctk.CTkButton(btn_frame, text="✗ Отклонить", width=100, command=lambda e=eng: self.reject_proposal(e)); btn_reject.pack(padx=5, pady=2)
+
+        total_pages = (len(proposals_to_render) + self.items_per_page - 1) // self.items_per_page
+        self.page_label_proposals.configure(text=f"Страница {self.current_page_proposals} / {max(1, total_pages)}")
+        self.prev_proposals_btn.configure(state="normal" if self.current_page_proposals > 1 else "disabled")
+        self.next_proposals_btn.configure(state="normal" if self.current_page_proposals < total_pages else "disabled")
+
+    def mark_as_modified(self, original_eng):
+        entry = next((e for e in self.all_entries if e['english_name'] == original_eng), None)
+        if entry: entry['is_modified'] = True
+
+    def add_new_entry(self):
+        new_entry_id = f"__new_{len([e for e in self.all_entries if e.get('is_new')])}"
+        new_entry = {'english_name': new_entry_id, 'russian_name': '', 'category': '', 'description': '', 'russian_description': '', 'is_new': True, 'is_modified': True}
+        self.all_entries.insert(0, new_entry)
+        self.entry_widgets[new_entry_id] = {
+            'eng_var': ctk.StringVar(value=''), 'rus_var': ctk.StringVar(value=''),
+            'cat_var': ctk.StringVar(value=''), 'desc_eng_text': '', 'desc_rus_text': ''
+        }
+        self.filter_entries()
+
+    def save_all_entries(self):
+        try:
+            for entry_data in self.all_entries:
+                if not entry_data.get('is_modified'): continue
+                
+                original_eng = entry_data['english_name']
+                widget_vars = self.entry_widgets[original_eng]
+                new_eng = widget_vars['eng_var'].get().strip()
+                new_rus = widget_vars['rus_var'].get().strip()
+                new_cat = widget_vars['cat_var'].get().strip()
+                new_desc_eng = widget_vars['desc_eng_textbox'].get("1.0", "end-1c").strip()
+                new_desc_rus = widget_vars['desc_rus_textbox'].get("1.0", "end-1c").strip()
+
+                if not new_eng or not new_desc_eng:
+                    if not entry_data.get('is_new'): self.db_manager.delete_bible_entry(original_eng)
+                    continue
+
+                update_data = {"russian_name": new_rus, "category": new_cat, "description": new_desc_eng, "russian_description": new_desc_rus}
+                
+                if entry_data.get('is_new'):
+                    self.db_manager.add_or_update_bible_entry(new_eng, update_data)
+                else:
+                    if original_eng != new_eng:
+                        self.db_manager.delete_bible_entry(original_eng)
+                    self.db_manager.add_or_update_bible_entry(new_eng, update_data)
+
+            gui_logger.info("Библия сохранена."); threading.Thread(target=self._load_data_thread, daemon=True).start()
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить Библию: {e}")
+            gui_logger.error(f"Ошибка сохранения Библии: {e}", exc_info=True)
+
+    def delete_entry(self, original_eng):
+        self.all_entries = [e for e in self.all_entries if e['english_name'] != original_eng]
+        self.entry_widgets.pop(original_eng, None)
+        self.db_manager.delete_bible_entry(original_eng)
+        self.filter_entries()
+
+    def accept_proposal(self, eng, data):
+        self.db_manager.add_or_update_bible_entry(eng, data)
+        self.db_manager.delete_world_bible_proposal(eng)
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+    def reject_proposal(self, eng):
+        self.db_manager.delete_world_bible_proposal(eng)
+        threading.Thread(target=self._load_data_thread, daemon=True).start()
+    def accept_all_proposals(self):
+        if messagebox.askyesno("Подтверждение", "Принять все видимые предложения?"):
+            for p in self.all_proposals:
+                self.db_manager.add_or_update_bible_entry(p['english_name'], {"russian_name": p['russian_name'], "category": p['category'], "description": p['description']})
+            self.db_manager.clear_world_bible_proposals()
+            threading.Thread(target=self._load_data_thread, daemon=True).start()
+    def reject_all_proposals(self):
+        if messagebox.askyesno("Подтверждение", "Отклонить все предложения?"):
+            self.db_manager.clear_world_bible_proposals()
+            threading.Thread(target=self._load_data_thread, daemon=True).start()
+
+    def filter_entries(self, *args):
+        query = self.search_var.get().lower()
+        
+        # Фильтрация для Библии
+        filtered_entries = [e for e in self.all_entries if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
+        self.current_page_entries = 1
+        self.render_entries_page(filtered_entries)
+
+        # Фильтрация для Предложений
+        filtered_proposals = [p for p in self.all_proposals if query in p['english_name'].lower() or (p.get('russian_name') and query in p['russian_name'].lower()) or query in p['description'].lower()]
+        self.current_page_proposals = 1
+        self.render_proposals_page(filtered_proposals)
+
+    def change_page_entries(self, delta):
+        query = self.search_var.get().lower()
+        filtered_entries = [e for e in self.all_entries if query in e['english_name'].lower() or query in self.entry_widgets[e['english_name']]['rus_var'].get().lower() or query in self.entry_widgets[e['english_name']]['desc_eng_text'].lower() or query in self.entry_widgets[e['english_name']]['desc_rus_text'].lower()]
+        total_pages = (len(filtered_entries) + self.items_per_page - 1) // self.items_per_page
+        new_page = self.current_page_entries + delta
+        if 1 <= new_page <= total_pages:
+            self.current_page_entries = new_page
+            self.render_entries_page(filtered_entries)
+
+    def change_page_proposals(self, delta):
+        query = self.search_var.get().lower()
+        filtered_proposals = [p for p in self.all_proposals if query in p['english_name'].lower() or (p.get('russian_name') and query in p['russian_name'].lower()) or query in p['description'].lower()]
+        total_pages = (len(filtered_proposals) + self.items_per_page - 1) // self.items_per_page
+        new_page = self.current_page_proposals + delta
+        if 1 <= new_page <= total_pages:
+            self.current_page_proposals = new_page
+            self.render_proposals_page(filtered_proposals)
+
+if __name__ == '__main__':
+    app = TranslatorGUI()
+    app.mainloop()

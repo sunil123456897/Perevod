@@ -5,7 +5,7 @@ import sys
 import time
 import logging
 
-from graph_runner import execute_graph_step_by_step as execute_graph
+from Perevod.graph_runner import execute_graph_step_by_step as execute_graph
 
 logger = logging.getLogger("NovelTranslator.CLI")
 

@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from knowledge_base.knowledge_base_manager import KnowledgeBaseManager
+from Perevod.knowledge_base.knowledge_base_manager import KnowledgeBaseManager
 
 @pytest.fixture
 def mock_db_manager():

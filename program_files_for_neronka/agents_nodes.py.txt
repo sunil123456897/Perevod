@@ -3,8 +3,8 @@
 import os
 import logging
 import google.generativeai as genai
-from .state import AgentState
-from . import tools
+from Perevod.agents.state import AgentState
+from Perevod.agents import tools
 
 logger = logging.getLogger("NovelTranslator.AgentNodes")
 
@@ -37,8 +37,7 @@ def process_all_chapters_node(state: AgentState) -> dict:
     total_chapters = len(chapters_queue)
 
     try:
-        genai.configure(api_key=settings.get('api_key'))
-        model = genai.GenerativeModel(settings.get('model_name'))
+        model = state['model']
         processed_chapters_list = []
 
         for i, chapter_data in enumerate(chapters_queue):
@@ -52,7 +51,11 @@ def process_all_chapters_node(state: AgentState) -> dict:
             rus_text = tools.tool_translate_chapter_logic(eng_text, title, settings, db_manager, kb_manager, model)
             tools.tool_write_chapter(chapter_data['output_path'], rus_text)
             
-            processed_chapters_list.append({"title": title, "output_path": chapter_data['output_path'], "rus_text": rus_text})
+            # Генерация предложений для словаря и Библии Вселенной
+            tools.tool_generate_dictionary_proposals(eng_text, rus_text, db_manager, model, settings)
+            tools.tool_generate_world_bible_proposals(eng_text, rus_text, db_manager, model, settings)
+
+            processed_chapters_list.append({"title": title, "input_path": chapter_data['input_path'], "output_path": chapter_data['output_path'], "rus_text": rus_text})
 
         logger.info("Пакетная обработка всех глав завершена.")
         if progress_callback:
@@ -67,8 +70,7 @@ def quality_assurance_node(state: AgentState) -> dict:
     """Узел контроля качества. Составляет единый отчет о проблемах."""
     logger.info("Узел: Контроль качества (Аудит консистентности)")
     settings = state['project_settings']
-    genai.configure(api_key=settings.get('api_key'))
-    model = genai.GenerativeModel(settings.get('model_name'))
+    model = state['model']
     
     report = tools.tool_analyze_inconsistencies(
         processed_texts=state['processed_chapters'],
@@ -89,8 +91,7 @@ def evaluation_node(state: AgentState) -> dict:
         return {"unification_verdicts": []}
 
     db_manager, settings = state['db_manager'], state['project_settings']
-    genai.configure(api_key=settings.get('api_key'))
-    model = genai.GenerativeModel(settings.get('model_name'))
+    model = state['model']
     
     all_verdicts = []
     issues = report['inconsistencies']
@@ -119,7 +120,7 @@ def apply_fixes_node(state: AgentState) -> dict:
     verdicts = state.get('unification_verdicts')
     if not verdicts:
         logger.info("Нет вердиктов для применения. Пропускаем.")
-        return {}
+        return {"processed_chapters": state['processed_chapters']}
         
     logger.info(f"Применение {len(verdicts)} пакетов исправлений ко всем главам...")
     tools.tool_apply_unification_batch(verdicts, state['processed_chapters'])
@@ -129,7 +130,7 @@ def apply_fixes_node(state: AgentState) -> dict:
     for verdict in verdicts:
         tools.tool_update_knowledge_base(verdict, state['db_manager'])
 
-    return {"quality_assurance_report": None, "unification_verdicts": []}
+    return {"quality_assurance_report": None, "unification_verdicts": [], "processed_chapters": state['processed_chapters']}
 
 def knowledge_base_audit_node(state: AgentState) -> dict:
     """Узел для автоматической проверки и очистки Базы Знаний."""
