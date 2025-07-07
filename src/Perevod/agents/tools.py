@@ -278,6 +278,12 @@ def tool_apply_unification_batch(verdicts: List[Dict[str, Any]], processed_chapt
                 
                 # Функция для замены, которая сохраняет регистр первой буквы
                 def replace_with_case(match):
+                    old_word = match.group(1) # Используем группу 1, т.к. весь паттерн теперь r'\b(...)\b'
+                    if old_word[0].isupper():
+                        # Если первая буква заглавная, делаем заглавной и первую букву нового слова
+                        return new.capitalize()
+                    # Дополнительно можно проверить old_word.istitle() или old_word.isupper()
+                    # для более сложной логики, но capitalize покрывает 99% случаев.
                     return new
 
                 modified_text, count = re.subn(pattern, replace_with_case, modified_text, flags=re.UNICODE | re.IGNORECASE)

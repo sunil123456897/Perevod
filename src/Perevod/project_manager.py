@@ -2,7 +2,7 @@
 
 import os
 import logging
-from Perevod.config import DEFAULT_SETTINGS
+from Perevod.config import DEFAULT_SETTINGS, PROJECT_ROOT
 from Perevod.database.models import Project, get_engine_and_session
 
 logger = logging.getLogger("NovelTranslator.Projects")
@@ -11,9 +11,7 @@ class ProjectManager:
     """Управляет проектами, используя центральную базу данных SQLite."""
     def __init__(self, db_path=None):
         if db_path is None:
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            # [ИСПРАВЛЕНО] Убеждаемся, что путь к БД всегда корректен
-            self.db_path = os.path.join(script_dir, '..', '..', '_project_files', 'projects_main.db')
+            self.db_path = os.path.join(PROJECT_ROOT, '_project_files', 'projects_main.db')
             os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         else:
             self.db_path = db_path

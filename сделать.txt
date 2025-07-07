@@ -1,10 +1,46 @@
-Рекомендуемый план действий:
-Немедленно исправить тесты:
-Удалите файл tests/test_gui.py, так как он методологически неверен.
-Проверьте, что остальные тесты (pytest в корневой директории) проходят успешно.
-Укрепить файловую систему:
-Реализуйте идею с PROJECT_ROOT в config.py, чтобы избавиться от хрупких путей ../../...
-Навести порядок в коде:
-Удалите дублирующиеся методы в database_manager.py.
-Принять стратегическое решение:
-Решите, нужен ли вам CLI. Если да — восстановите его функциональность.(он не нужен)
+ Обнаруженные Проблемы и Точки Роста
+🟡 Важная проблема: Регрессия в логике замены текста
+Проблема: В файле src/Perevod/agents/tools.py в функции tool_apply_unification_batch была утеряна логика сохранения регистра при замене. Предыдущая версия содержала функцию replace_with_case, которая корректно обрабатывала слова с заглавной буквы. Текущая версия просто заменяет все на вариант в нижнем регистре:
+Generated python
+# Было (и это было правильно)
+# def replace_with_case(match):
+#     old_word = match.group(0)
+#     if old_word.istitle(): return new.title()
+#     ...
+
+# Стало (регрессия)
+def replace_with_case(match):
+    return new
+Use code with caution.
+Python
+Риск: Если система решит унифицировать "Совет" и "совета" к варианту "совет", то в начале предложения "Совет" превратится в "совет", что является грамматической ошибкой. Для литературного перевода это критично.
+Решение: Верните предыдущую, более сложную реализацию функции replace_with_case в tool_apply_unification_batch.
+Generated python
+# agents/tools.py -> tool_apply_unification_batch
+
+# ... (внутри цикла по главам)
+for replacement_info in patterns_to_replace:
+    pattern = replacement_info['pattern']
+    new = replacement_info['new']
+    
+    # Функция для замены, которая сохраняет регистр
+    def replace_with_case(match):
+        old_word = match.group(1) # Используем группу 1, т.к. весь паттерн теперь r'\b(...)\b'
+        if old_word[0].isupper():
+            # Если первая буква заглавная, делаем заглавной и первую букву нового слова
+            return new.capitalize()
+        # Дополнительно можно проверить old_word.istitle() или old_word.isupper()
+        # для более сложной логики, но capitalize покрывает 99% случаев.
+        return new
+
+    modified_text, count = re.subn(pattern, replace_with_case, modified_text, flags=re.IGNORECASE)
+    if count > 0:
+        logger.info(f"Замена в '{chapter['title']}': {count} раз(а) по паттерну для '{new}'")
+        file_was_modified = True
+# ...
+Use code with caution.
+Python
+🟢 Мелкие улучшения и рекомендации
+Неконсистентность в ProjectManager: В src/Perevod/project_manager.py все еще используется старый, хрупкий способ определения пути к БД (os.path.join(script_dir, '..', '..', ...)). Сделайте его консистентным с остальным кодом, импортируя PROJECT_ROOT из config.py.
+Обновление зависимостей: В requirements.txt вы указали pymorphy3 и pymorphy3-dicts-ru. Это правильное и современное решение. Убедитесь, что в agents/tools.py вы также используете import pymorphy3. (Судя по коду, вы это уже сделали, отлично!).
+Небольшое упрощение в AgentState: В src/Perevod/agents/state.py поля processed_chapters и unification_verdicts помечены как Annotated[list, add]. Это полезно для LangGraph, когда вы хотите добавлять элементы к списку от шага к шагу. Однако ваша текущая архитектура работает по-другому: узел process_all_chapters_node создает и возвращает полный список processed_chapters, а evaluation_node — полный список unification_verdicts. Они не добавляют элементы к существующим спискам. Вы можете безопасно убрать Annotated и add и оставить просто list, чтобы код точнее отражал реальное поведение. Это не ошибка, а небольшое упрощение.

@@ -1,10 +1,3 @@
-feat: LLM-based proposal generation, inconsistency analysis, and retry logic
+Feat: Combine program_files_for_neronka .txt files into a single file.
 
-This commit introduces the functionality to automatically generate dictionary and World Bible proposals using the LLM.
-
-- Added `tool_generate_dictionary_proposals` and `tool_generate_world_bible_proposals` in `src/Perevod/agents/tools.py` to generate proposals based on chapter content.
-- Integrated calls to these new functions within `process_all_chapters_node` in `src/Perevod/agents/nodes.py`.
-- Updated `tool_analyze_inconsistencies` in `src/Perevod/agents/tools.py` to use LLM for identifying inconsistencies in translated texts.
-- Added retry logic with exponential backoff to `tool_translate_chunk` in `src/Perevod/agents/tools.py` to handle API quota limits.
-- Corrected `SyntaxError` in `src/Perevod/agents/tools.py` related to regular expression.
-- Adjusted LLM prompts for proposal generation to request 5-10 most important terms/entities.
+This commit combines all individual .txt files from the program_files_for_neronka directory into a single file named combined_program_files.txt for easier access and review.
