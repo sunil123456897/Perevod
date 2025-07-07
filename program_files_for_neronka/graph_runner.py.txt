@@ -1,0 +1,118 @@
+# graph_runner.py
+
+import logging
+from langgraph.graph import StateGraph, END
+from agents.state import AgentState
+from agents.nodes import (initialize_project_node, process_all_chapters_node, 
+                          quality_assurance_node, evaluation_node, 
+                          apply_fixes_node, knowledge_base_audit_node)
+from database.database_manager import DatabaseManager
+from knowledge_base.knowledge_base_manager import KnowledgeBaseManager
+from typing import Any, Dict
+
+logger = logging.getLogger("NovelTranslator.GraphRunner")
+
+# ======================================================================================
+# Маршрутизаторы (Условные рёбра)
+# ======================================================================================
+
+def router_after_initialization(state: AgentState) -> str:
+    """Решает, есть ли главы для обработки после инициализации."""
+    if state.get("error"): return "end"
+    return "process_all_chapters" if state.get("chapters_to_process") else "end"
+
+def router_after_qa(state: AgentState) -> str:
+    """Решает, нужно ли запускать конвейер исправлений после контроля качества."""
+    report = state.get("quality_assurance_report")
+    if not report or not report.get("inconsistencies"):
+        logger.info("Контроль качества не выявил проблем. Завершение работы.")
+        return "end"
+    else:
+        logger.info(f"Найдено {len(report['inconsistencies'])} проблем. Запуск конвейера исправлений.")
+        return "evaluate_and_fix_pipeline"
+
+# ======================================================================================
+# Сборка и компиляция графа
+# ======================================================================================
+
+def build_graph():
+    """Собирает и компилирует финальный, автономный граф с конвейером исправлений."""
+    workflow = StateGraph(AgentState)
+
+    # 1. Добавляем основные узлы-этапы
+    workflow.add_node("initialize", initialize_project_node)
+    workflow.add_node("process_all_chapters", process_all_chapters_node)
+    workflow.add_node("quality_assurance", quality_assurance_node)
+
+    # 2. [НОВАЯ АРХИТЕКТУРА] Создаем вложенный граф для конвейера исправлений
+    fix_pipeline = StateGraph(AgentState)
+    fix_pipeline.add_node("evaluate", evaluation_node)
+    fix_pipeline.add_node("apply_fixes", apply_fixes_node)
+    fix_pipeline.set_entry_point("evaluate")
+    fix_pipeline.add_edge("evaluate", "apply_fixes")
+    # Завершаем вложенный граф, чтобы он вернул управление основному
+    fix_pipeline.add_edge("apply_fixes", END) 
+    
+    # Добавляем скомпилированный конвейер как один узел в основной граф
+    workflow.add_node("evaluate_and_fix_pipeline", fix_pipeline.compile())
+
+    # Финальный узел аудита Базы Знаний
+    workflow.add_node("knowledge_base_audit", knowledge_base_audit_node)
+
+    # 3. Определяем точку входа и соединяем узлы
+    workflow.set_entry_point("initialize")
+
+    workflow.add_conditional_edges(
+        "initialize",
+        router_after_initialization,
+        {"process_all_chapters": "process_all_chapters", "end": END}
+    )
+    
+    workflow.add_edge("process_all_chapters", "quality_assurance")
+
+    workflow.add_conditional_edges(
+        "quality_assurance",
+        router_after_qa,
+        {"evaluate_and_fix_pipeline": "evaluate_and_fix_pipeline", "end": END}
+    )
+    
+    # После того как конвейер исправлений отработал, запускаем финальный аудит БЗ
+    workflow.add_edge("evaluate_and_fix_pipeline", "knowledge_base_audit")
+    workflow.add_edge("knowledge_base_audit", END)
+
+    app = workflow.compile(recursion_limit=150)
+    logger.info("Автономный граф с конвейером контроля качества успешно скомпилирован.")
+    return app
+
+# ======================================================================================
+# Функция выполнения графа
+# ======================================================================================
+
+def run_translation_workflow(project_name: str, settings_overrides: dict = None, progress_callback=None):
+    """Выполняет граф с полной автоматической обработкой."""
+    db_manager = DatabaseManager(project_name=project_name)
+    project_settings = db_manager.get_project_settings()
+    if settings_overrides:
+        project_settings.update(settings_overrides)
+    
+    kb_manager = KnowledgeBaseManager(
+        project_name=project_name,
+        api_key=project_settings.get('api_key'),
+        embedding_model_name=project_settings.get('embedding_model_name')
+    )
+    
+    initial_state = {
+        "project_name": project_name,
+        "project_settings": project_settings,
+        "db_manager": db_manager, 
+        "kb_manager": kb_manager,
+        "progress_callback": progress_callback
+    }
+
+    app = build_graph()
+    final_state = {}
+    
+    for s in app.stream(initial_state):
+        final_state = s
+
+    return final_state

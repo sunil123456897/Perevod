@@ -1,0 +1,108 @@
+# agents/tools.py
+
+import logging
+import json
+import re
+import os
+from functools import lru_cache
+from typing import List, Dict, Any
+
+# ... (все инструменты до tool_apply_unification_fix без изменений) ...
+
+def tool_evaluate_inconsistency(issue: Dict[str, Any], dictionary: Dict[str, str], model, settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Инструмент "Коллегии Судей" для одной проблемы."""
+    eng_term = issue['english_term']
+    variants = issue['russian_variants']
+    dict_rus_term_data = dictionary.get(eng_term)
+    
+    if dict_rus_term_data and dict_rus_term_data.get("russian") in variants:
+        correct_variant = dict_rus_term_data.get("russian")
+        logger.info(f"Вердикт для '{eng_term}' вынесен по словарю: '{correct_variant}' является каноничным.")
+        return {"action": "unify", "english_term": eng_term, "correct_variant": correct_variant, "reason": "dictionary_match"}
+            
+    prompt = f"""# ROLE: Linguistic Arbiter
+# TASK: You are given an English term and several Russian translation variants found in a text. Your task is to choose the single best, most contextually appropriate, and stylistically correct translation.
+# ENGLISH TERM: "{eng_term}"
+# RUSSIAN VARIANTS: {json.dumps(variants, ensure_ascii=False)}
+# INSTRUCTIONS:
+1. Analyze the variants.
+2. Choose the one that is most likely to be the correct, canonical translation.
+3. Return ONLY the chosen variant, and nothing else.
+# BEST TRANSLATION:"""
+    
+    best_variant = clean_translation_output(tool_translate_chunk(model, prompt, settings))
+    if not best_variant or best_variant not in variants:
+        # Если LLM вернул некорректный ответ, выбираем самый частый или первый вариант
+        best_variant = max(set(variants), key=variants.count)
+        logger.warning(f"LLM не смог выбрать вариант для '{eng_term}'. Эвристически выбран: '{best_variant}'")
+    else:
+        logger.info(f"Вердикт для '{eng_term}' вынесен LLM: '{best_variant}' выбран как лучший вариант.")
+    
+    return {"action": "unify", "english_term": eng_term, "correct_variant": best_variant, "reason": "llm_choice"}
+
+def tool_apply_unification_batch(verdicts: List[Dict[str, Any]], processed_chapters: List[Dict[str, str]]):
+    """
+    [АРХИТЕКТУРНОЕ ИЗМЕНЕНИЕ] Применяет пакет вердиктов ко всем главам.
+    Читает каждый файл только один раз, применяет все исправления в памяти и записывает.
+    """
+    if not verdicts:
+        return
+
+    # Создаем единый словарь замен для эффективности
+    # {'старый_вариант_1': 'новый', 'старый_вариант_2': 'новый'}
+    replacements = {}
+    for verdict in verdicts:
+        correct_variant = verdict['correct_variant']
+        for old_variant in verdict['russian_variants']:
+            if old_variant.lower() != correct_variant.lower():
+                replacements[old_variant] = correct_variant
+    
+    if not replacements:
+        logger.info("Нет замен для применения после фильтрации идентичных вариантов.")
+        return
+
+    logger.info(f"Начинается пакетное исправление {len(replacements)} вариантов в {len(processed_chapters)} главах.")
+
+    for chapter in processed_chapters:
+        file_was_modified = False
+        try:
+            current_text = tool_read_chapter(chapter['output_path'])
+            modified_text = current_text
+            
+            # Применяем все замены к тексту текущей главы
+            for old, new in replacements.items():
+                # Используем \b для замены только целых слов
+                pattern = r'\b' + re.escape(old) + r'\b'
+                modified_text, count = re.subn(pattern, new, modified_text, flags=re.IGNORECASE)
+                if count > 0:
+                    file_was_modified = True
+            
+            if file_was_modified:
+                logger.info(f"Обнаружены и исправлены несоответствия в файле: {chapter['output_path']}")
+                tool_write_chapter(chapter['output_path'], modified_text)
+        except Exception as e:
+            logger.error(f"Ошибка при применении исправлений к файлу {chapter['output_path']}: {e}")
+
+def tool_update_knowledge_base(verdict: Dict[str, Any], db_manager):
+    """Обновляет Базу Знаний (словарь) на основе одного вердикта."""
+    if verdict.get('action') == 'unify':
+        eng_term = verdict['english_term']
+        correct_variant = verdict['correct_variant']
+        logger.info(f"Обновление словаря: '{eng_term}' -> '{correct_variant}'")
+        db_manager.add_or_update_term(eng_term, correct_variant)
+
+def tool_audit_knowledge_base(db_manager):
+    """Выполняет аудит и очистку Базы Знаний."""
+    logger.info("Запуск инструмента: Аудит Базы Знаний...")
+    try:
+        merged_count = db_manager.automerge_dictionary_duplicates()
+        if merged_count > 0:
+            logger.info(f"Аудит завершен. Успешно объединено {merged_count} групп(ы) дубликатов в словаре.")
+        else:
+            logger.info("Аудит словаря завершен. Дубликатов не найдено.")
+        return {"status": "success", "merged_duplicates": merged_count}
+    except Exception as e:
+        logger.error(f"Ошибка при автоматическом слиянии дубликатов в словаре: {e}", exc_info=True)
+        return {"error": f"Ошибка слияния дубликатов: {e}"}
+
+# ... (остальные инструменты, такие как tool_translate_chapter_logic, остаются без изменений) ...

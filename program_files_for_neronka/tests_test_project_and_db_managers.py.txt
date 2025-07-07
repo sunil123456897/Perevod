@@ -1,0 +1,245 @@
+import unittest
+import os
+import sys
+from unittest.mock import patch, MagicMock
+
+# Добавляем корневую директорию проекта в sys.path, чтобы импорты работали
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from project_manager import ProjectManager
+from database.database_manager import DatabaseManager
+from database.models import Base, get_engine_and_session
+from config import DEFAULT_SETTINGS
+
+class TestProjectAndDBManagers(unittest.TestCase):
+
+    def setUp(self):
+        # Используем in-memory SQLite для тестов
+        self.db_path = ":memory:"
+        self.engine, self.Session = get_engine_and_session(self.db_path)
+        Base.metadata.create_all(self.engine) # Создаем таблицы для in-memory DB
+
+        # Мокаем ProjectManager, чтобы он использовал нашу in-memory DB
+        with patch('project_manager.get_engine_and_session', return_value=(self.engine, self.Session)):
+            self.project_manager = ProjectManager()
+        
+        # Мокаем DatabaseManager, чтобы он использовал нашу in-memory DB
+        # Для DatabaseManager нам нужно мокнуть get_project_settings, чтобы он не пытался
+        # получить настройки из ProjectManager, а использовал переданные
+        self.mock_project_settings = DEFAULT_SETTINGS.copy()
+        self.mock_project_settings["project_name"] = "TestProject"
+
+        # Мокаем logger, чтобы не засорять вывод тестов
+        self.patcher_logger_info = patch('logging.Logger.info')
+        self.mock_logger_info = self.patcher_logger_info.start()
+        self.patcher_logger_error = patch('logging.Logger.error')
+        self.mock_logger_error = self.patcher_logger_error.start()
+        self.patcher_logger_warning = patch('logging.Logger.warning')
+        self.mock_logger_warning = self.patcher_logger_warning.start()
+
+    def tearDown(self):
+        Base.metadata.drop_all(self.engine) # Удаляем таблицы после каждого теста
+        self.patcher_logger_info.stop()
+        self.patcher_logger_error.stop()
+        self.patcher_logger_warning.stop()
+
+    # --- Тесты для ProjectManager ---
+
+    def test_add_or_update_project(self):
+        project_name = "TestProject1"
+        settings = {"setting1": "value1", "setting2": 123, "project_name": project_name}
+        self.assertTrue(self.project_manager.add_or_update_project(project_name, settings))
+        
+        retrieved_settings = self.project_manager.get_project_settings(project_name)
+        self.assertEqual(retrieved_settings["setting1"], "value1")
+        self.assertEqual(retrieved_settings["setting2"], 123)
+        self.assertEqual(retrieved_settings["project_name"], project_name)
+
+        # Обновление проекта
+        updated_settings = {"setting1": "newValue", "new_setting": True, "project_name": project_name}
+        self.assertTrue(self.project_manager.add_or_update_project(project_name, updated_settings))
+        retrieved_updated_settings = self.project_manager.get_project_settings(project_name)
+        
+
+
+    def test_get_project_settings_non_existent(self):
+        settings = self.project_manager.get_project_settings("NonExistentProject")
+        self.assertEqual(settings, DEFAULT_SETTINGS) # Должны вернуться настройки по умолчанию
+
+    def test_get_project_names(self):
+        self.project_manager.add_or_update_project("ProjectB", {})
+        self.project_manager.add_or_update_project("ProjectA", {})
+        names = self.project_manager.get_project_names()
+        self.assertEqual(names, ["ProjectA", "ProjectB"])
+
+    def test_delete_project(self):
+        self.project_manager.add_or_update_project("ProjectToDelete", {})
+        self.assertIn("ProjectToDelete", self.project_manager.get_project_names())
+        self.assertTrue(self.project_manager.delete_project("ProjectToDelete"))
+        self.assertNotIn("ProjectToDelete", self.project_manager.get_project_names())
+        self.assertFalse(self.project_manager.delete_project("NonExistentProject")) # Попытка удалить несуществующий
+
+    # --- Тесты для DatabaseManager ---
+
+    def test_db_manager_initialization(self):
+        # DatabaseManager должен быть инициализирован с project_name
+        db_manager = DatabaseManager(project_name="TestProject")
+        self.assertIsNotNone(db_manager.Session)
+        self.assertIsNotNone(db_manager.engine)
+
+    def test_add_or_update_term(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_or_update_term("hello", "привет", "greeting")
+        terms = db_manager.get_terms_dictionary()
+        self.assertIn("hello", terms)
+        self.assertEqual(terms["hello"]["russian"], "привет")
+        self.assertEqual(terms["hello"]["category"], "greeting")
+
+        # Обновление
+        db_manager.add_or_update_term("hello", "здравствуйте", "formal_greeting")
+        terms = db_manager.get_terms_dictionary()
+        self.assertEqual(terms["hello"]["russian"], "здравствуйте")
+        self.assertEqual(terms["hello"]["category"], "formal_greeting")
+
+    def test_delete_term(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_or_update_term("test_term", "тест")
+        self.assertIn("test_term", db_manager.get_terms_dictionary())
+        db_manager.delete_term("test_term")
+        self.assertNotIn("test_term", db_manager.get_terms_dictionary())
+
+    def test_add_or_update_bible_entry(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_or_update_bible_entry("CharacterA", {"russian_name": "ПерсонажА", "category": "character", "description": "Описание А"})
+        bible = db_manager.get_world_bible()
+        self.assertIn("CharacterA", bible)
+        self.assertEqual(bible["CharacterA"]["russian_name"], "ПерсонажА")
+
+        # Обновление
+        db_manager.add_or_update_bible_entry("CharacterA", {"russian_name": "ПерсонажА_обнов", "category": "character", "description": "Новое описание"})
+        bible = db_manager.get_world_bible()
+        self.assertEqual(bible["CharacterA"]["russian_name"], "ПерсонажА_обнов")
+        self.assertEqual(bible["CharacterA"]["description"], "Новое описание")
+
+    def test_delete_bible_entry(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_or_update_bible_entry("ToDelete", {"russian_name": "Удалить", "category": "other", "description": "Описание"})
+        self.assertIn("ToDelete", db_manager.get_world_bible())
+        db_manager.delete_bible_entry("ToDelete")
+        self.assertNotIn("ToDelete", db_manager.get_world_bible())
+
+    def test_dictionary_proposals(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_dictionary_proposal("prop_eng", "prop_rus", "cat", 0.9)
+        proposals = db_manager.get_dictionary_proposals()
+        self.assertIn("prop_eng", proposals)
+        self.assertEqual(proposals["prop_eng"]["russian"], "prop_rus")
+        
+        db_manager.delete_dictionary_proposal("prop_eng")
+        self.assertNotIn("prop_eng", db_manager.get_dictionary_proposals())
+
+        db_manager.add_dictionary_proposal("prop1", "rus1", "cat1", 0.8)
+        db_manager.add_dictionary_proposal("prop2", "rus2", "cat2", 0.7)
+        self.assertEqual(db_manager.count_dictionary_proposals(), 2)
+        db_manager.clear_dictionary_proposals()
+        self.assertEqual(db_manager.count_dictionary_proposals(), 0)
+
+    def test_world_bible_proposals(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_world_bible_proposal("WB_eng", "WB_rus", "char", "desc")
+        proposals = db_manager.get_world_bible_proposals()
+        self.assertIn("WB_eng", proposals)
+        self.assertEqual(proposals["WB_eng"]["russian_name"], "WB_rus")
+
+        db_manager.delete_world_bible_proposal("WB_eng")
+        self.assertNotIn("WB_eng", db_manager.get_world_bible_proposals())
+
+        db_manager.add_world_bible_proposal("WB1", "rus1", "cat1", "desc1")
+        db_manager.add_world_bible_proposal("WB2", "rus2", "cat2", "desc2")
+        self.assertEqual(db_manager.count_world_bible_proposals(), 2)
+        db_manager.clear_world_bible_proposals()
+        self.assertEqual(db_manager.count_world_bible_proposals(), 0)
+
+    def test_merge_dictionary_terms(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        db_manager.add_or_update_term("term_main", "главный")
+        db_manager.add_or_update_term("term_alias1", "алиас1")
+        db_manager.add_or_update_term("term_alias2", "алиас2")
+
+        self.assertTrue(db_manager.merge_dictionary_terms("term_main", ["term_alias1", "term_alias2"]))
+        terms = db_manager.get_terms_dictionary()
+        self.assertIn("term_main", terms)
+        self.assertNotIn("term_alias1", terms)
+        self.assertNotIn("term_alias2", terms)
+        self.assertEqual(terms["term_main"]["russian"], "главный")
+
+    def test_automerge_dictionary_duplicates(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        
+        # Добавляем термины в in-memory базу данных
+        db_manager.add_or_update_term("apple", "яблоко", "fruit")
+        db_manager.add_or_update_term("Apple", "Яблоко", "fruit")
+        db_manager.add_or_update_term("banana", "банан", "fruit")
+        db_manager.add_or_update_term("Banana", "Банан", "fruit")
+        db_manager.add_or_update_term("unique", "уникальный", "other")
+
+        merged_count = db_manager.automerge_dictionary_duplicates()
+        self.assertEqual(merged_count, 2) # Ожидаем 2 группы дубликатов (apple, banana)
+
+        # Проверяем состояние базы данных после объединения
+        terms = db_manager.get_terms_dictionary()
+        self.assertIn("apple", terms)
+        self.assertIn("banana", terms)
+        self.assertIn("unique", terms)
+        self.assertNotIn("Apple", terms)
+        self.assertNotIn("Banana", terms)
+        
+        # Проверяем, что русский перевод был сохранен (например, от 'apple' или 'Apple')
+        self.assertIn(terms["apple"]["russian"], ["яблоко", "Яблоко"])
+        self.assertIn(terms["banana"]["russian"], ["банан", "Банан"])
+
+    def test_run_master_edit(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        
+        # Мокаем LLM для master_edit
+        mock_llm = MagicMock()
+        mock_llm.generate_content.return_value.text = "Edited text content."
+        
+        # Мокаем genai.GenerativeModel
+        with patch('google.generativeai.GenerativeModel', return_value=mock_llm):
+            processed_texts = [
+                {"title": "Chapter 1", "rus": "Original text 1."},
+                {"title": "Chapter 2", "rus": "Original text 2."}
+            ]
+            
+            edited_text, error = db_manager.run_master_edit(processed_texts)
+            
+            self.assertIsNone(error)
+            self.assertEqual(edited_text, "Edited text content.")
+            mock_llm.generate_content.assert_called_once()
+            # Проверяем, что входной текст для LLM был сформирован правильно
+            call_args = mock_llm.generate_content.call_args[0][0]
+            self.assertIn("Original text 1.", call_args)
+            self.assertIn("Original text 2.", call_args)
+            self.assertIn("---=== CHAPTER: Chapter 1 ===---", call_args)
+            self.assertIn("---=== CHAPTER: Chapter 2 ===---", call_args)
+
+    def test_run_master_edit_llm_error(self):
+        db_manager = DatabaseManager(project_name="TestProject")
+        
+        mock_llm = MagicMock()
+        mock_llm.generate_content.side_effect = Exception("LLM error")
+        
+        with patch('google.generativeai.GenerativeModel', return_value=mock_llm):
+            processed_texts = [
+                {"title": "Chapter 1", "rus": "Original text 1."}
+            ]
+            
+            edited_text, error = db_manager.run_master_edit(processed_texts)
+            
+            self.assertIsNone(edited_text)
+            self.assertIn("LLM error", error)
+            mock_llm.generate_content.assert_called_once()
+
+if __name__ == '__main__':
+    unittest.main()

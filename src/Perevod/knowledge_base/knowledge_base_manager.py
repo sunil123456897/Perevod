@@ -1,0 +1,129 @@
+# knowledge_base/knowledge_base_manager.py
+
+import os
+import logging
+import time
+import chromadb
+import google.generativeai as genai
+from Perevod.agents.semantic_chunker import SemanticChunker
+from Perevod.agents.reranker import Reranker
+
+logger = logging.getLogger("NovelTranslator.KBManager")
+
+class KnowledgeBaseManager:
+    """Управляет всеми операциями с векторной базой данных ChromaDB (Семантическим Индексом)."""
+    def __init__(self, project_name, api_key, embedding_model_name):
+        self.project_name = project_name
+        self.api_key = api_key
+        self.embedding_model_name = embedding_model_name
+        
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.chroma_path = os.path.join(script_dir, '..', '..', '..', '_project_files', project_name, 'chroma_db')
+        os.makedirs(self.chroma_path, exist_ok=True)
+
+        self.client = chromadb.PersistentClient(path=self.chroma_path)
+        
+        if self.api_key:
+            os.environ['CHROMA_GOOGLE_GENAI_API_KEY'] = self.api_key
+            genai.configure(api_key=self.api_key)
+            self.embedding_function = chromadb.utils.embedding_functions.GoogleGenerativeAiEmbeddingFunction(
+                model_name=self.embedding_model_name
+            )
+        else:
+            self.embedding_function = None
+            logger.warning("API ключ не предоставлен, эмбеддинги не будут работать.")
+        
+        self.collection = self.client.get_or_create_collection(
+            name=f"{project_name}_kb",
+            embedding_function=self.embedding_function
+        )
+        self.chunker = SemanticChunker()
+        self.reranker = Reranker()
+        logger.info(f"KnowledgeBaseManager инициализирован. Коллекция: '{self.collection.name}'. Записей: {self.collection.count()}")
+
+    def add_or_update_entries(self, documents, metadatas, ids):
+        """Пакетное добавление или обновление записей в ChromaDB с ограничением по размеру батча."""
+        if not documents: return
+
+        batch_size = 100
+        total_added_updated = 0
+
+        for i in range(0, len(documents), batch_size):
+            batch_documents = documents[i:i + batch_size]
+            batch_metadatas = metadatas[i:i + batch_size]
+            batch_ids = ids[i:i + batch_size]
+
+            if not batch_documents: continue
+
+            self.collection.upsert(documents=batch_documents, metadatas=batch_metadatas, ids=batch_ids)
+            total_added_updated += len(batch_ids)
+            logger.info(f"Добавлено/обновлено {len(batch_ids)} записей в ChromaDB (всего: {total_added_updated}).")
+        
+        logger.info(f"Всего добавлено/обновлено {total_added_updated} записей.")
+        
+    def query(self, query_text, top_k=5, n_candidates=25):
+        """Выполняет семантический поиск по базе знаний с двухэтапным ранжированием."""
+        start_time = time.time()
+        if not self.api_key:
+            logger.warning("Запрос к базе знаний невозможен: API ключ отсутствует.")
+            return ""
+        if not query_text or self.collection.count() == 0 or len(query_text) < 3: return ""
+        
+        results = self.collection.query(query_texts=[query_text], n_results=min(n_candidates, self.collection.count()))
+        
+        candidate_docs = [{'text': doc, 'id': results['ids'][0][i], 'metadata': results['metadatas'][0][i]} for i, doc in enumerate(results['documents'][0])]
+        if not candidate_docs: return ""
+        
+        reranked_docs = self.reranker.rerank(query_text, candidate_docs)[:top_k]
+        if not reranked_docs: return ""
+        
+        context_str = "\n## Relevant Context (from Knowledge Base)\n- Use this highly relevant, automatically selected information for consistency.\n\n"
+        context_str += "".join([f"- {doc['text']}\n" for doc in reranked_docs])
+        
+        end_time = time.time()
+        logger.info(f"Запрос к базе знаний выполнен за {end_time - start_time:.4f} секунд.")
+        
+        return context_str
+
+    def rebuild_index_from_db(self, db_manager, progress_callback=None):
+        """Полностью перестраивает Семантический Индекс на основе данных из SQLite."""
+        logger.info("Начало полной перестройки семантического индекса из SQLite...")
+        
+        terms = db_manager.get_terms_dictionary()
+        bible = db_manager.get_world_bible()
+        
+        items_to_index = []
+        
+        for name, data in bible.items():
+            description_chunks = self.chunker.chunk(data.get('description', ''))
+            for i, chunk in enumerate(description_chunks):
+                text_to_embed = f"Bible Entry. Category: {data.get('category', 'N/A')}. Name: {name} (Russian: {data.get('russian_name', 'N/A')}). Description: {chunk}"
+                items_to_index.append({'id': f"bible_{name}_chunk_{i}", 'text': text_to_embed, 'metadata': {'source': 'bible', 'name': name}})
+        
+        for term, data in terms.items():
+            rus_translation = data.get('russian', 'N/A')
+            text_to_embed = f"Dictionary Term. Category: {data.get('category', 'N/A')}. Term: {term}. Translation: {rus_translation}."
+            items_to_index.append({'id': f"dict_{term}", 'text': text_to_embed, 'metadata': {'source': 'dictionary', 'name': term}})
+
+        total_items = len(items_to_index)
+        if total_items == 0:
+            logger.info("Нет данных для индексации. Очистка существующего индекса (если есть)...")
+            if self.collection.count() > 0:
+                self.client.delete_collection(name=self.collection.name)
+                self.collection = self.client.create_collection(name=self.collection.name, embedding_function=self._get_embedding)
+            if progress_callback: progress_callback(100, "Нет данных для индексации")
+            return
+
+        batch_size = 50 
+        for i in range(0, total_items, batch_size):
+            batch = items_to_index[i:i + batch_size]
+            if progress_callback:
+                progress_callback((i / total_items) * 100, f"Индексация {i+1}-{min(i+batch_size, total_items)}/{total_items}")
+            self.add_or_update_entries(
+                documents=[item['text'] for item in batch],
+                metadatas=[item['metadata'] for item in batch],
+                ids=[item['id'] for item in batch]
+            )
+        
+        logger.info(f"Перестройка индекса завершена. Всего в коллекции: {self.collection.count()} записей.")
+        if progress_callback: progress_callback(100, f"Индекс построен: {self.collection.count()} записей")

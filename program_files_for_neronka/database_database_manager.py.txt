@@ -1,0 +1,143 @@
+# database/database_manager.py
+
+import os
+import logging
+from contextlib import contextmanager
+from .models import (Project, Term, WorldBibleEntry, DictionaryProposal, 
+                     WorldBibleProposal, get_engine_and_session)
+
+logger = logging.getLogger("NovelTranslator.DBManager")
+
+class DatabaseManager:
+    def __init__(self, project_name):
+        self.project_name = project_name
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.db_path = os.path.join(script_dir, '..', '_project_files', 'projects_main.db')
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        self.engine, self.Session = get_engine_and_session(self.db_path)
+        self.project_id = self._get_or_create_project_id()
+        logger.info(f"DatabaseManager инициализирован для проекта '{project_name}' (ID: {self.project_id})")
+
+    @contextmanager
+    def session_scope(self):
+        session = self.Session()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback(); logger.error("Ошибка в транзакции, выполнен откат.", exc_info=True); raise
+        finally:
+            session.close()
+
+    def _get_or_create_project_id(self):
+        with self.session_scope() as s:
+            p = s.query(Project).filter_by(name=self.project_name).first()
+            if p: return p.id
+            np = Project(name=self.project_name, settings_json={}); s.add(np); s.flush(); return np.id
+
+    def get_project_settings(self):
+        with self.session_scope() as s: return s.query(Project).filter_by(id=self.project_id).one().settings_json or {}
+    def update_project_settings(self, d):
+        with self.session_scope() as s: s.query(Project).filter_by(id=self.project_id).one().settings_json = d
+
+    # --- Словарь ---
+    def get_terms_dictionary(self):
+        with self.session_scope() as s: return {t.english_term: {"russian": t.russian_term, "category": t.category} for t in s.query(Term).filter_by(project_id=self.project_id).all()}
+    def add_or_update_term(self, eng, rus, cat='other'):
+        with self.session_scope() as s:
+            t = s.query(Term).filter_by(project_id=self.project_id, english_term=eng).first()
+            if t: t.russian_term = rus; t.category = cat
+            else: s.add(Term(project_id=self.project_id, english_term=eng, russian_term=rus, category=cat))
+    def delete_term(self, term):
+        with self.session_scope() as s: s.query(Term).filter_by(project_id=self.project_id, english_term=term).delete()
+    def get_all_terms(self):
+        with self.session_scope() as s: return [{"english_term": t.english_term, "russian_term": t.russian_term, "category": t.category} for t in s.query(Term).filter_by(project_id=self.project_id).all()]
+
+    # --- Библия Вселенной ---
+    def get_world_bible(self):
+        with self.session_scope() as s:
+            return {e.english_name: {
+                "russian_name": e.russian_name,
+                "category": e.category,
+                "description": e.description,
+                "russian_description": e.russian_description
+            } for e in s.query(WorldBibleEntry).filter_by(project_id=self.project_id).all()}
+
+    def add_or_update_bible_entry(self, eng_name, data):
+        with self.session_scope() as s:
+            e = s.query(WorldBibleEntry).filter_by(project_id=self.project_id, english_name=eng_name).first()
+            if e:
+                e.russian_name = data.get("russian_name")
+                e.category = data.get("category")
+                e.description = data.get("description")
+                e.russian_description = data.get("russian_description")
+            else:
+                s.add(WorldBibleEntry(project_id=self.project_id, english_name=eng_name, **data))
+
+    def delete_bible_entry(self, name):
+        with self.session_scope() as s: s.query(WorldBibleEntry).filter_by(project_id=self.project_id, english_name=name).delete()
+
+    def get_all_world_bible_entries(self):
+        with self.session_scope() as s:
+            return [{
+                "english_name": e.english_name,
+                "russian_name": e.russian_name,
+                "category": e.category,
+                "description": e.description,
+                "russian_description": e.russian_description
+            } for e in s.query(WorldBibleEntry).filter_by(project_id=self.project_id).all()]
+
+    # --- Предложения для Словаря (исправлено для консистентности) ---
+    def add_dictionary_proposal(self, eng, rus, cat='other', conf=0.8):
+        with self.session_scope() as s:
+            if not s.query(Term).filter_by(project_id=self.project_id, english_term=eng).first() and \
+               not s.query(DictionaryProposal).filter_by(project_id=self.project_id, english_term=eng).first():
+                s.add(DictionaryProposal(project_id=self.project_id, english_term=eng, russian_term=rus, category=cat, confidence=conf))
+    def get_dictionary_proposals(self):
+        with self.session_scope() as s:
+            return {p.english_term: {
+                "english_term": p.english_term,
+                "russian_term": p.russian_term,
+                "category": p.category,
+                "confidence": p.confidence
+            } for p in s.query(DictionaryProposal).filter_by(project_id=self.project_id).all()}
+    def delete_dictionary_proposal(self, term):
+        with self.session_scope() as s: s.query(DictionaryProposal).filter_by(project_id=self.project_id, english_term=term).delete()
+    def clear_dictionary_proposals(self):
+        with self.session_scope() as s: s.query(DictionaryProposal).filter_by(project_id=self.project_id).delete()
+
+    # --- Предложения для Библии (исправлено для консистентности) ---
+    def add_world_bible_proposal(self, eng_name, rus_name, cat, desc):
+        with self.session_scope() as s:
+            if not s.query(WorldBibleEntry).filter_by(project_id=self.project_id, english_name=eng_name).first() and \
+               not s.query(WorldBibleProposal).filter_by(project_id=self.project_id, english_name=eng_name).first():
+                s.add(WorldBibleProposal(project_id=self.project_id, english_name=eng_name, russian_name=rus_name, category=cat, description=desc))
+    def get_world_bible_proposals(self):
+        with self.session_scope() as s:
+            return {p.english_name: {
+                "english_name": p.english_name,
+                "russian_name": p.russian_name,
+                "category": p.category,
+                "description": p.description
+            } for p in s.query(WorldBibleProposal).filter_by(project_id=self.project_id).all()}
+    def delete_world_bible_proposal(self, name):
+        with self.session_scope() as s: s.query(WorldBibleProposal).filter_by(project_id=self.project_id, english_name=name).delete()
+    def clear_world_bible_proposals(self):
+        with self.session_scope() as s: s.query(WorldBibleProposal).filter_by(project_id=self.project_id).delete()
+
+    def automerge_dictionary_duplicates(self):
+        merged_groups_count = 0
+        with self.session_scope() as session:
+            all_terms = session.query(Term).filter_by(project_id=self.project_id).all()
+            terms_by_lower = {}
+            for term in all_terms: terms_by_lower.setdefault(term.english_term.lower(), []).append(term)
+            for terms_list in terms_by_lower.values():
+                if len(terms_list) > 1:
+                    terms_list.sort(key=lambda t: (not t.english_term[0].isupper(), len(t.english_term), t.english_term))
+                    primary_term, alias_terms = terms_list[0], terms_list[1:]
+                    logger.info(f"Объединение дубликатов для '{primary_term.english_term}'. Псевдонимы: {[t.english_term for t in alias_terms]}")
+                    for alias in alias_terms:
+                        if not primary_term.russian_term and alias.russian_term: primary_term.russian_term = alias.russian_term
+                        session.delete(alias)
+                    merged_groups_count += 1
+            return merged_groups_count

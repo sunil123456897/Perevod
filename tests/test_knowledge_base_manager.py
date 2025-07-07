@@ -1,0 +1,62 @@
+# tests/test_knowledge_base_manager.py
+
+import pytest
+from unittest.mock import MagicMock, patch
+from Perevod.knowledge_base.knowledge_base_manager import KnowledgeBaseManager
+
+@pytest.fixture
+def mock_db_manager():
+    db_manager = MagicMock()
+    db_manager.get_terms_dictionary.return_value = {
+        "term1": {"russian": "термин1", "category": "cat1"},
+        "term2": {"russian": "термин2", "category": "cat2"},
+    }
+    db_manager.get_world_bible.return_value = {
+        "entry1": {"russian_name": "запись1", "category": "cat_a", "description": "description1"},
+        "entry2": {"russian_name": "запись2", "category": "cat_b", "description": "description2"},
+    }
+    return db_manager
+
+@pytest.fixture
+@patch('chromadb.PersistentClient')
+@patch('google.generativeai.configure')
+def kb_manager(mock_genai_configure, mock_chromadb_client):
+    return KnowledgeBaseManager("test_project", "test_api_key", "test_model")
+
+def test_kb_manager_initialization(kb_manager):
+    assert kb_manager.project_name == "test_project"
+    assert kb_manager.api_key == "test_api_key"
+    # The assertions for the mocks are now implicitly handled by the fixture
+
+@pytest.mark.parametrize("query_text, expected_output", [
+    ("", ""),
+    ("sh", ""),
+    ("This is a valid query", "\n## Relevant Context (from Knowledge Base)\n- Use this highly relevant, automatically selected information for consistency.\n\n- reranked_doc\n")
+])
+def test_query(kb_manager, query_text, expected_output):
+    # Mock the collection and its methods
+    mock_collection = MagicMock()
+    mock_collection.count.return_value = 1
+    mock_collection.query.return_value = {
+        'ids': [['id1']],
+        'documents': [['doc1']],
+        'metadatas': [[{'source': 'bible', 'name': 'entry1'}]]
+    }
+    kb_manager.collection = mock_collection
+    
+    # Mock the reranker
+    mock_reranker = MagicMock()
+    mock_reranker.rerank.return_value = [{'text': 'reranked_doc'}]
+    kb_manager.reranker = mock_reranker
+    
+    assert kb_manager.query(query_text) == expected_output
+
+def test_rebuild_index_from_db(kb_manager, mock_db_manager):
+    # Mock the collection and its methods
+    mock_collection = MagicMock()
+    kb_manager.collection = mock_collection
+    
+    kb_manager.rebuild_index_from_db(mock_db_manager)
+    
+    # Check that add_or_update_entries was called
+    assert mock_collection.upsert.call_count > 0

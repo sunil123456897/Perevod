@@ -1,0 +1,90 @@
+# main.py
+
+import argparse
+import sys
+import os
+from config import setup_logging, DEFAULT_SETTINGS
+from project_manager import ProjectManager
+
+# Настраиваем логирование один раз при старте приложения
+setup_logging()
+
+def run_gui_mode(cli_args):
+    """Запускает графический интерфейс на CustomTkinter."""
+    try:
+        from main_gui import TranslatorGUI
+    except ImportError as e:
+        print(f"Ошибка: Не удалось импортировать необходимые компоненты: {e}")
+        print("Возможно, не установлена библиотека CustomTkinter.")
+        print("Попробуйте выполнить команду: pip install -r requirements.txt")
+        sys.exit(1)
+
+    print("Запуск графического интерфейса...")
+    app = TranslatorGUI(cli_args=cli_args)
+    app.mainloop()
+
+def run_cli_mode(cli_args):
+    """Запускает режим командной строки."""
+    from cli import run_cli_translation
+    
+    if not cli_args.project or cli_args.project == "Default":
+        print("Ошибка: Для режима CLI необходимо указать имя проекта с помощью флага --project.")
+        sys.exit(1)
+        
+    # <-- ИЗМЕНЕНО: Получаем настройки из менеджера проектов -->
+    pm = ProjectManager()
+    if cli_args.project not in pm.get_project_names():
+        print(f"Ошибка: Проект '{cli_args.project}' не найден в '{pm.projects_file}'.")
+        sys.exit(1)
+        
+    project_settings = pm.get_project_settings(cli_args.project)
+    
+    # Переопределяем настройки из аргументов CLI, если они были указаны
+    if cli_args.api_key:
+        project_settings['api_key'] = cli_args.api_key
+    if cli_args.overwrite:
+        project_settings['overwrite_existing'] = True
+    if cli_args.parallel:
+        project_settings['parallel_translation'] = True
+    if cli_args.workers:
+        project_settings['max_workers'] = cli_args.workers
+        
+    run_cli_translation(project_settings)
+
+
+def main():
+    """Главная функция, парсит аргументы и определяет режим работы."""
+    
+    parser = argparse.ArgumentParser(
+        description="Переводчик новелл с использованием Google Gemini API v7.0",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+
+    # <-- ИЗМЕНЕНО: Упрощенный выбор режима -->
+    parser.add_argument("--cli", action="store_true", help="Запуск перевода в режиме командной строки (требует --project).")
+
+    # <-- ИЗМЕНЕНО: Аргументы теперь более логичны -->
+    parser.add_argument("--project", help="Имя проекта для загрузки настроек (обязательно для CLI, опционально для GUI).")
+    parser.add_argument("--api-key", default=os.environ.get("GOOGLE_API_KEY"), help="API ключ для Gemini (переопределяет ключ из проекта).")
+    
+    # Опции, специфичные для CLI, для переопределения настроек проекта
+    cli_group = parser.add_argument_group('Опции для режима CLI')
+    cli_group.add_argument("--overwrite", action="store_true", help="Перезаписывать существующие файлы перевода.")
+    cli_group.add_argument("--parallel", action="store_true", help="Использовать параллельную обработку глав.")
+    cli_group.add_argument("--workers", type=int, help=f"Количество потоков для параллельной обработки (по умолч.: {DEFAULT_SETTINGS['max_workers']}).")
+
+    # <-- УДАЛЕНО: Аргументы, которые теперь берутся из проекта -->
+    # parser.add_argument("--input-dir", ...)
+    # parser.add_argument("--output-dir", ...)
+    # parser.add_argument("--edit-dictionary", ...)
+    # parser.add_argument("--dictionary", ...)
+
+    args = parser.parse_args()
+
+    if args.cli:
+        run_cli_mode(args)
+    else:
+        run_gui_mode(args)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,6 @@
+2025-07-04 17:08:05 - NovelTranslator - INFO     - [MainThread] - Система логирования успешно настроена.
+2025-07-04 17:08:13 - NovelTranslator.Projects - DEBUG    - [MainThread] - Менеджер проектов инициализирован. Файл БД: C:\Users\User\Desktop\kod\Perevod\_project_files\projects_main.db
+2025-07-04 17:08:13 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Default
+2025-07-04 17:08:17 - NovelTranslator.GUI - INFO     - [MainThread] - Загрузка проекта: Tribe
+2025-07-04 17:08:17 - NovelTranslator.DBManager - INFO     - [Thread-1 (_initialize_thread)] - DatabaseManager инициализирован для проекта 'Tribe' (ID: 5)
+2025-07-04 17:08:21 - NovelTranslator.KBManager - INFO     - [Thread-1 (_initialize_thread)] - KnowledgeBaseManager инициализирован. Коллекция: 'Tribe_kb'. Записей: 1172

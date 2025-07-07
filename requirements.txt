@@ -1,6 +1,0 @@
-# Этот файл содержит список библиотек, необходимых для работы проекта.
-# Установить их можно командой: pip install -r requirements.txt
-
-google-generativeai
-spacy>=3.0.0
-customtkinter>=5.2.0

@@ -1,0 +1,27 @@
+# tests/test_gui.py
+
+import pytest
+from unittest.mock import patch
+import customtkinter as ctk
+from gui import TranslatorGUI
+
+@pytest.fixture
+def app(qtbot):
+    with patch('gui.ProjectManager'), patch('gui.DatabaseManager'), patch('gui.KnowledgeBaseManager'):
+        window = TranslatorGUI()
+        window.withdraw()  # Hide the window
+        qtbot.addWidget(window)
+        qtbot.waitExposed(window)
+        return window
+
+def test_get_current_settings_from_ui(app):
+    # Set some values to the settings variables
+    app.settings_vars['api_key'].set('test_api_key')
+    app.settings_vars['overwrite_existing'].set(True)
+    app.settings_vars['temperature'].set(0.8)
+    
+    settings = app.get_current_settings_from_ui()
+    
+    assert settings['api_key'] == 'test_api_key'
+    assert settings['overwrite_existing'] is True
+    assert settings['temperature'] == 0.8
