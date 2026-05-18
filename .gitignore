@@ -1,1 +1,54 @@
-'__pycache__/'  
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+
+# Local environments
+.env
+.venv/
+venv/
+
+# Local logs and generated outputs
+*.log
+translation.log
+src/translation.log
+out.txt
+test_errors.txt
+commit_message.txt
+build/
+dist/
+*.spec
+
+# Local project data and databases
+_project_files/
+src/_project_files/
+input/
+output/
+*.db
+*.sqlite3
+*.sqlite
+
+# Temporary local test folders
+_test_*/
+_test_temp/
+_test_file_io/
+workflow_test_*/
+.pytest_tmp/
+temp_input_*/
+.tmp_*/
+path/
+.superpowers/
+
+# One-off local diagnostics kept outside production scripts
+db_inspector.py
+verify_db.py
+download_punkt.py
+download_punkt_tab.py
+update_files_for_neronka.py

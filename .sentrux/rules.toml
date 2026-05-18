@@ -1,0 +1,35 @@
+# .sentrux/rules.toml
+# Architectural rules for Novel Translator (Perevod 3.0)
+
+name = "Novel Translator (Perevod)"
+description = "Translates fantasy novels using LangGraph and Gemini API"
+
+[layers]
+# Определение слоев проекта
+utils = ["src/Perevod/utils/**"]
+database = ["src/Perevod/database/**"]
+agents = ["src/Perevod/agents/**"]
+gui = ["src/Perevod/gui/**"]
+
+[[constraints]]
+name = "Database isolation"
+message = "База данных не должна зависеть от GUI и логики LLM-агентов."
+from = "database"
+forbidden_to = ["gui", "agents"]
+
+[[constraints]]
+name = "Utility isolation"
+message = "Вспомогательные утилиты должны быть независимыми хелперами и не импортировать БД, агентов или GUI."
+from = "utils"
+forbidden_to = ["database", "agents", "gui"]
+
+[[constraints]]
+name = "Agent isolation from GUI"
+message = "Узлы агентов и графа не должны зависеть от элементов пользовательского интерфейса (GUI)."
+from = "agents"
+forbidden_to = ["gui"]
+
+[[constraints]]
+name = "No circular dependencies"
+message = "В кодовой базе проекта запрещены циклические зависимости."
+type = "acyclic"

@@ -1,2 +1,0 @@
-[console_scripts]
-perevod = Perevod.main:main

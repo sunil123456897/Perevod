@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Lint
+        run: python -m ruff check src scripts tests --exclude venv --exclude build --exclude dist
+
+      - name: Repo cleanliness
+        run: python scripts/check_repo_cleanliness.py
+
+      - name: Safe tests
+        run: python scripts/run_safe_tests.py
+
+      - name: Coverage smoke
+        if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
+        run: |
+          python -m coverage run scripts/run_coverage.py
+          python -m coverage report -m
+          python -m coverage xml
+
+      - name: Upload coverage artifact
+        if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml

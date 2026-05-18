@@ -1,107 +1,77 @@
-# config.py
-import logging
+# src/Perevod/config.py
 import os
-import sys
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+from Perevod.model_registry import (
+    DEFAULT_TASK_MODELS,
+    GEMINI_EMBEDDING,
+    normalize_embedding_model as _normalize_embedding_model,
+    normalize_model_configs as _normalize_model_configs,
+)
 
-# <-- НОВОЕ: Список моделей для выбора в GUI
-AVAILABLE_MODELS = [
-    "gemini-1.5-pro-latest",
-    "gemini-2.5-pro",
-    "gemini-1.5-flash-latest",
-    "gemini-2.5-flash",
-]
-
-# ==============================================================================
-# НАСТРОЙКИ ПО УМОЛЧАНИЮ
-# Это центральное место для всех настроек. Они будут использоваться, если
-# в проекте не указаны другие значения.
-# ==============================================================================
-DEFAULT_SETTINGS = {
-    # Основные пути и ключ (в GUI заполняются пользователем)
-    "api_key": os.environ.get("GOOGLE_API_KEY", ""), # Ищем ключ в окружении
-    "input_dir": "",
-    "output_dir": "",
-    "projects_file": "translation_projects.json",
-    "project_name": "Default",
-
-    # Настройки процесса
-    "overwrite_existing": False,
-    "parallel_translation": False,
-    "max_workers": os.cpu_count() or 2,
-
-    # Этапы перевода (каждый этап - это дополнительный вызов API)
-    "enable_genre_analysis": True,
-    "enable_literary_step": True,
-    "enable_grammar_guardian": True, 
-    "enable_smart_dictionary_update": True,
-    "enable_bible_analysis": True,
-
-    # Параметры модели Gemini
-    "model_name": "gemini-2.5-flash", # Модель по умолчанию
-    "max_output_tokens": 65536,
-    "temperature": 0.75,
-    "top_p": 0.95,
-    "top_k": 40,
-
-    # <-- НОВОЕ: Настройки Семантического Ядра -->
-    "embedding_model_name": "models/text-embedding-004", # Модель для векторизации
-    "relevance_threshold": 0.75, # Порог релевантности (косинусное сходство)
-    "max_context_items": 5, # Макс. число релевантных элементов в контексте
-
-    # Обработка текста
-    "max_text_length": 30000,
-    "overlap_size": 1000,
-
-    # Обработка ошибок и лимиты API
-    "max_retries": 3,
-    "retry_delay": 5,       # в секундах
-    "api_rate_limit": 50,    # запросов в минуту (для text-embedding-004 лимит выше, но мы ставим общий)
-
-    # NER (Named Entity Recognition) и обновление словаря
-    "spacy_model_name": "en_core_web_trf", # Мощная модель для NER
-    "ner_text_limit": 50000,
-    "dictionary_confidence_threshold": 0.8,
-
-    # Кеширование
-    "cache_size": 512,      # количество кешируемых запросов
-}
+# Определяем абсолютный путь к корневой директории проекта
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
-# ==============================================================================
-# НАСТРОЙКА ЛОГИРОВАНИЯ
-# Эта функция настраивает красивый и информативный вывод логов в файл
-# и в консоль.
-# ==============================================================================
-def setup_logging():
-    """Настраивает систему логирования для всего приложения."""
-    root_logger = logging.getLogger("NovelTranslator")
-    
-    if root_logger.handlers:
-        return
+class Settings(BaseSettings):
+    """
+    Централизованная и валидируемая конфигурация для всего приложения.
+    Автоматически читает переменные из файла .env и окружения.
+    """
 
-    root_logger.setLevel(logging.DEBUG)
-
-    log_formatter = logging.Formatter(
-        '%(asctime)s - %(name)-15s - %(levelname)-8s - [%(threadName)s] - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+    model_config = SettingsConfigDict(
+        env_file=os.path.join(PROJECT_ROOT, ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
 
-    file_handler = logging.FileHandler(os.path.join(PROJECT_ROOT, "translation.log"), encoding='utf-8', mode='w')
-    file_handler.setFormatter(log_formatter)
-    file_handler.setLevel(logging.DEBUG)
+    # --- Ключевые параметры ---
+    GOOGLE_API_KEY: str = ""
+    HTTPS_PROXY: str = ""
+    HTTP_PROXY: str = ""
+    https_proxy: str = ""
+    http_proxy: str = ""
 
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(log_formatter)
-    stream_handler.setLevel(logging.INFO)
+    # --- Настройки моделей по задачам ---
+    gemini_free_tier_mode: bool = True
+    analysis_model_name: str = DEFAULT_TASK_MODELS["analysis"]
+    curation_model_name: str = DEFAULT_TASK_MODELS["curation"]
+    translation_model_name: str = DEFAULT_TASK_MODELS["translation"]
+    qa_model_name: str = DEFAULT_TASK_MODELS["qa"]
+    summarization_model_name: str = DEFAULT_TASK_MODELS["summarization"]
 
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(stream_handler)
+    # Модель для создания эмбеддингов
+    embedding_model_name: str = GEMINI_EMBEDDING
 
-    logging.getLogger('google.api_core').setLevel(logging.WARNING)
-    logging.getLogger('google.generativeai').setLevel(logging.WARNING)
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('httpx').setLevel(logging.WARNING)
+    # --- Параметры генерации ---
+    temperature: float = 0.5
+    top_p: float = 0.95
+    translation_chunk_token_budget: int = 120_000
 
-    root_logger.info("Система логирования успешно настроена.")
+    # --- Настройки семантического ядра ---
+    relevance_threshold: float = 0.75
+    max_context_items: int = 7
+    enable_reranker: bool = False
+
+# Создаем единый, глобально доступный экземпляр настроек
+settings = Settings()
+
+
+def apply_proxy_environment(settings_obj: Settings) -> None:
+    for name in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+        value = getattr(settings_obj, name, "")
+        if value and not os.environ.get(name):
+            os.environ[name] = value
+
+
+def normalize_model_configs(
+    model_configs: dict[str, str], *, free_tier_mode: bool
+) -> dict[str, str]:
+    return _normalize_model_configs(model_configs, free_tier_mode=free_tier_mode)
+
+
+def normalize_embedding_model(model_name: str, *, free_tier_mode: bool) -> str:
+    return _normalize_embedding_model(model_name, free_tier_mode=free_tier_mode)
+
+
+apply_proxy_environment(settings)

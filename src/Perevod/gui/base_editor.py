@@ -1,5 +1,6 @@
 import customtkinter as ctk
 
+
 class BaseEditorWindow(ctk.CTkToplevel):
     def __init__(self, master, title, db_manager):
         super().__init__(master)
@@ -8,12 +9,17 @@ class BaseEditorWindow(ctk.CTkToplevel):
         self.master = master
         self.geometry("800x600")
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.search_var = ctk.StringVar()
 
-        self.create_widgets()
+        # Main container frame to prevent pack/grid conflicts
+        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_frame.pack(expand=True, fill="both")
+        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=1)
 
-    def create_widgets(self):
-        # This method should be overridden by subclasses
-        pass
+        self.lift()
+        self.focus_set()
+        self.grab_set()
 
     def on_close(self):
         self.destroy()

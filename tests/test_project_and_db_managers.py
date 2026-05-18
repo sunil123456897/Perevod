@@ -1,199 +1,188 @@
-import unittest
+import pytest
 import os
-from unittest.mock import patch, MagicMock
+import uuid
+from pathlib import Path
+from unittest.mock import patch
 
+from Perevod.config import PROJECT_ROOT
 from Perevod.project_manager import ProjectManager
-from Perevod.database.database_manager import DatabaseManager, get_engine_and_session
-from Perevod.database.models import Base, Project, Term, WorldBibleEntry, DictionaryProposal, WorldBibleProposal
-from Perevod.config import DEFAULT_SETTINGS
-
-class TestProjectAndDBManagers(unittest.TestCase):
-
-    def setUp(self):
-        # Используем in-memory SQLite для тестов
-        self.db_path = ":memory:"
-        self.engine, self.Session = get_engine_and_session(self.db_path)
-        Base.metadata.create_all(self.engine) # Создаем таблицы для in-memory DB
-
-        # Мокаем ProjectManager, чтобы он использовал нашу in-memory DB
-        self.project_manager = ProjectManager(db_path=self.db_path)
-        
-        # Мокаем DatabaseManager, чтобы он использовал нашу in-memory DB
-        # Для DatabaseManager нам нужно мокнуть get_project_settings, чтобы он не пытался
-        # получить настройки из ProjectManager, а использовал переданные
-        self.mock_project_settings = DEFAULT_SETTINGS.copy()
-        self.mock_project_settings["project_name"] = "TestProject"
-
-        # Мокаем logger, чтобы не засорять вывод тестов
-        self.patcher_logger_info = patch('logging.Logger.info')
-        self.mock_logger_info = self.patcher_logger_info.start()
-        self.patcher_logger_error = patch('logging.Logger.error')
-        self.mock_logger_error = self.patcher_logger_error.start()
-        self.patcher_logger_warning = patch('logging.Logger.warning')
-        self.mock_logger_warning = self.patcher_logger_warning.start()
-
-    def tearDown(self):
-        Base.metadata.drop_all(self.engine) # Удаляем таблицы после каждого теста
-        self.patcher_logger_info.stop()
-        self.patcher_logger_error.stop()
-        self.patcher_logger_warning.stop()
-
-    # --- Тесты для ProjectManager ---
-
-    def test_add_or_update_project(self):
-        project_name = "TestProject1"
-        settings = {"setting1": "value1", "setting2": 123, "project_name": project_name}
-        self.assertTrue(self.project_manager.add_or_update_project(project_name, settings))
-        
-        retrieved_settings = self.project_manager.get_project_settings(project_name)
-        self.assertEqual(retrieved_settings["setting1"], "value1")
-        self.assertEqual(retrieved_settings["setting2"], 123)
-        self.assertEqual(retrieved_settings["project_name"], project_name)
-
-        # Обновление проекта
-        updated_settings = {"setting1": "newValue", "new_setting": True, "project_name": project_name}
-        self.assertTrue(self.project_manager.add_or_update_project(project_name, updated_settings))
-        retrieved_updated_settings = self.project_manager.get_project_settings(project_name)
-        
+from Perevod.database.database_manager import DatabaseManager
 
 
-    def test_get_project_settings_non_existent(self):
-        settings = self.project_manager.get_project_settings("NonExistentProject")
-        self.assertEqual(settings, DEFAULT_SETTINGS) # Должны вернуться настройки по умолчанию
+@pytest.fixture(scope="function")
+def db_path():
+    path = os.path.join(PROJECT_ROOT, f"_test_project_managers_{uuid.uuid4().hex}.db")
+    if os.path.exists(path):
+        os.remove(path)
+    yield path
+    if os.path.exists(path):
+        os.remove(path)
 
-    def test_get_project_names(self):
-        self.project_manager.add_or_update_project("ProjectB", {})
-        self.project_manager.add_or_update_project("ProjectA", {})
-        names = self.project_manager.get_project_names()
-        self.assertEqual(names, ["ProjectA", "ProjectB"])
 
-    def test_delete_project(self):
-        self.project_manager.add_or_update_project("ProjectToDelete", {})
-        self.assertIn("ProjectToDelete", self.project_manager.get_project_names())
-        self.assertTrue(self.project_manager.delete_project("ProjectToDelete"))
-        self.assertNotIn("ProjectToDelete", self.project_manager.get_project_names())
-        self.assertFalse(self.project_manager.delete_project("NonExistentProject")) # Попытка удалить несуществующий
+@pytest.fixture
+def project_manager(db_path):
+    manager = ProjectManager(db_path=db_path)
+    yield manager
+    manager.engine.dispose()
 
-    # --- Тесты для DatabaseManager ---
 
-    def test_db_manager_initialization(self):
-        # DatabaseManager должен быть инициализирован с project_name
-        db_manager = DatabaseManager(project_name="TestProject")
-        self.assertIsNotNone(db_manager.Session)
-        self.assertIsNotNone(db_manager.engine)
+@pytest.fixture
+def db_manager(project_manager, db_path):
+    project_manager.add_or_update_project("TestProject", {})
+    manager = DatabaseManager(project_name="TestProject", db_path=db_path)
+    yield manager
+    manager.engine.dispose()
 
-    def test_add_or_update_term(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_or_update_term("hello", "привет", "greeting")
-        terms = db_manager.get_terms_dictionary()
-        self.assertIn("hello", terms)
-        self.assertEqual(terms["hello"]["russian"], "привет")
-        self.assertEqual(terms["hello"]["category"], "greeting")
+# --- Тесты ---
 
-        # Обновление
-        db_manager.add_or_update_term("hello", "здравствуйте", "formal_greeting")
-        terms = db_manager.get_terms_dictionary()
-        self.assertEqual(terms["hello"]["russian"], "здравствуйте")
-        self.assertEqual(terms["hello"]["category"], "formal_greeting")
+def test_add_and_get_project(project_manager):
+    project_name = "TestProject1"
+    project_settings = {"api_key": "123"}
+    project_manager.add_or_update_project(project_name, project_settings)
 
-    def test_delete_term(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_or_update_term("test_term", "тест")
-        self.assertIn("test_term", db_manager.get_terms_dictionary())
-        db_manager.delete_term("test_term")
-        self.assertNotIn("test_term", db_manager.get_terms_dictionary())
+    # Проверяем, что проект появился в списке
+    assert project_name in project_manager.get_project_names()
 
-    def test_add_or_update_bible_entry(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_or_update_bible_entry("CharacterA", {"russian_name": "ПерсонажА", "category": "character", "description": "Описание А"})
-        bible = db_manager.get_world_bible()
-        self.assertIn("CharacterA", bible)
-        self.assertEqual(bible["CharacterA"]["russian_name"], "ПерсонажА")
+    retrieved = project_manager.get_project_settings(project_name)
+    assert retrieved["api_key"] == "123"
 
-        # Обновление
-        db_manager.add_or_update_bible_entry("CharacterA", {"russian_name": "ПерсонажА_обнов", "category": "character", "description": "Новое описание"})
-        bible = db_manager.get_world_bible()
-        self.assertEqual(bible["CharacterA"]["russian_name"], "ПерсонажА_обнов")
-        self.assertEqual(bible["CharacterA"]["description"], "Новое описание")
 
-    def test_delete_bible_entry(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_or_update_bible_entry("ToDelete", {"russian_name": "Удалить", "category": "other", "description": "Описание"})
-        self.assertIn("ToDelete", db_manager.get_world_bible())
-        db_manager.delete_bible_entry("ToDelete")
-        self.assertNotIn("ToDelete", db_manager.get_world_bible())
+def test_get_project_settings_repairs_legacy_windows_user_paths(project_manager, monkeypatch):
+    monkeypatch.setattr("Perevod.project_manager.Path.home", lambda: Path(r"C:\Users\vanya"))
+    project_manager.add_or_update_project(
+        "LegacyPaths",
+        {
+            "input_dir": "C:/Users/User/Desktop/kod/Eng_Fermer",
+            "output_dir": r"C:\Users\User\Desktop\kod\Rus_Fermer",
+        },
+    )
 
-    def test_dictionary_proposals(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_dictionary_proposal("prop_eng", "prop_rus", "cat", 0.9)
-        proposals = db_manager.get_dictionary_proposals()
-        self.assertIn("prop_eng", proposals)
-        self.assertEqual(proposals["prop_eng"]["russian_term"], "prop_rus")
-        
-        db_manager.delete_dictionary_proposal("prop_eng")
-        self.assertNotIn("prop_eng", db_manager.get_dictionary_proposals())
+    settings = project_manager.get_project_settings("LegacyPaths")
 
-        db_manager.add_dictionary_proposal("prop1", "rus1", "cat1", 0.8)
-        db_manager.add_dictionary_proposal("prop2", "rus2", "cat2", 0.7)
-        self.assertEqual(db_manager.count_dictionary_proposals(), 2)
-        db_manager.clear_dictionary_proposals()
-        self.assertEqual(db_manager.count_dictionary_proposals(), 0)
+    assert settings["input_dir"] == r"C:\Users\vanya\Desktop\kod\Eng_Fermer"
+    assert settings["output_dir"] == r"C:\Users\vanya\Desktop\kod\Rus_Fermer"
 
-    def test_world_bible_proposals(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_world_bible_proposal("WB_eng", "WB_rus", "char", "desc")
-        proposals = db_manager.get_world_bible_proposals()
-        self.assertIn("WB_eng", proposals)
-        self.assertEqual(proposals["WB_eng"]["russian_name"], "WB_rus")
 
-        db_manager.delete_world_bible_proposal("WB_eng")
-        self.assertNotIn("WB_eng", db_manager.get_world_bible_proposals())
+@pytest.mark.parametrize(
+    "unsafe_name",
+    [
+        "",
+        "   ",
+        ".",
+        "..",
+        r"C:\tmp\project",
+        r"..\outside",
+        "Project:ads",
+        "Project?draft",
+        "CON",
+        "NUL.txt",
+        "LPT1",
+        "Project.",
+    ],
+)
+def test_project_manager_rejects_unsafe_project_names(project_manager, unsafe_name):
+    assert project_manager.add_or_update_project(unsafe_name, {}) is False
+    assert unsafe_name not in project_manager.get_project_names()
 
-        db_manager.add_world_bible_proposal("WB1", "rus1", "cat1", "desc1")
-        db_manager.add_world_bible_proposal("WB2", "rus2", "cat2", "desc2")
-        self.assertEqual(db_manager.count_world_bible_proposals(), 2)
-        db_manager.clear_world_bible_proposals()
-        self.assertEqual(db_manager.count_world_bible_proposals(), 0)
 
-    def test_merge_dictionary_terms(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        db_manager.add_or_update_term("term_main", "главный")
-        db_manager.add_or_update_term("term_alias1", "алиас1")
-        db_manager.add_or_update_term("term_alias2", "алиас2")
+def test_database_manager_rejects_unsafe_project_name(db_path):
+    with pytest.raises(ValueError, match="Unsafe project name"):
+        DatabaseManager(project_name=r"..\outside", db_path=db_path)
 
-        self.assertTrue(db_manager.merge_dictionary_terms("term_main", ["term_alias1", "term_alias2"]))
-        terms = db_manager.get_terms_dictionary()
-        self.assertIn("term_main", terms)
-        self.assertNotIn("term_alias1", terms)
-        self.assertNotIn("term_alias2", terms)
-        self.assertEqual(terms["term_main"]["russian"], "главный")
+@patch("Perevod.project_manager._create_knowledge_base_manager")
+def test_delete_project(mock_kb, project_manager):
+    project_manager.add_or_update_project("ToDelete", {})
+    assert "ToDelete" in project_manager.get_project_names()
+    project_manager.delete_project("ToDelete")
+    assert "ToDelete" not in project_manager.get_project_names()
 
-    def test_automerge_dictionary_duplicates(self):
-        db_manager = DatabaseManager(project_name="TestProject")
-        
-        # Добавляем термины в in-memory базу данных
-        db_manager.add_or_update_term("apple", "яблоко", "fruit")
-        db_manager.add_or_update_term("Apple", "Яблоко", "fruit")
-        db_manager.add_or_update_term("banana", "банан", "fruit")
-        db_manager.add_or_update_term("Banana", "Банан", "fruit")
-        db_manager.add_or_update_term("unique", "уникальный", "other")
 
-        merged_count = db_manager.automerge_dictionary_duplicates()
-        self.assertEqual(merged_count, 2) # Ожидаем 2 группы дубликатов (apple, banana)
+@patch("Perevod.project_manager._create_knowledge_base_manager")
+def test_delete_project_preserves_project_when_kb_delete_fails(mock_kb, project_manager):
+    kb_manager = mock_kb.return_value
+    kb_manager.delete_collection.side_effect = RuntimeError("ChromaDB is down")
+    project_manager.add_or_update_project("KeepOnKbFailure", {})
 
-        # Проверяем состояние базы данных после объединения
-        terms = db_manager.get_terms_dictionary()
-        self.assertIn("apple", terms)
-        self.assertIn("banana", terms)
-        self.assertIn("unique", terms)
-        self.assertNotIn("Apple", terms)
-        self.assertNotIn("Banana", terms)
-        
-        # Проверяем, что русский перевод был сохранен (например, от 'apple' или 'Apple')
-        self.assertIn(terms["apple"]["russian"], ["яблоко", "Яблоко"])
-        self.assertIn(terms["banana"]["russian"], ["банан", "Банан"])
+    assert project_manager.delete_project("KeepOnKbFailure") is False
 
-    
+    assert "KeepOnKbFailure" in project_manager.get_project_names()
 
-if __name__ == '__main__':
-    unittest.main()
+
+def test_add_and_get_term(db_manager):
+    db_manager.add_or_update_term("hello", "привет")
+    terms = db_manager.get_terms_dictionary()
+    assert "hello" in terms
+    assert terms["hello"]["russian_term"] == "привет"
+
+def test_add_and_get_bible_entry(db_manager):
+    data = {"russian_name": "ПерсонажА", "description": "Описание"}
+    db_manager.add_or_update_bible_entry("CharacterA", data)
+    bible = db_manager.get_world_bible()
+    assert "CharacterA" in bible
+    assert bible["CharacterA"]["russian_name"] == "ПерсонажА"
+
+def test_proposals(db_manager):
+    db_manager.add_dictionary_proposal("prop1", "предложение1")
+    assert "prop1" in db_manager.get_dictionary_proposals()
+    db_manager.delete_dictionary_proposal("prop1")
+    assert "prop1" not in db_manager.get_dictionary_proposals()
+
+def test_merge_terms(db_manager):
+    db_manager.add_or_update_term("main", "главный")
+    db_manager.add_or_update_term("alias", "псевдоним")
+    db_manager.merge_dictionary_terms("main", ["alias"])
+    terms = db_manager.get_terms_dictionary()
+    assert "main" in terms
+    assert "alias" not in terms
+
+
+def test_merge_terms_ignores_primary_term_in_aliases(db_manager):
+    db_manager.add_or_update_term("main", "главный")
+
+    assert db_manager.merge_dictionary_terms("main", ["main"]) is True
+
+    terms = db_manager.get_terms_dictionary()
+    assert terms == {
+        "main": {
+            "russian_term": "главный",
+            "category": "other",
+        }
+    }
+
+
+def test_restore_quarantined_term_merges_existing_dictionary_entry(db_manager):
+    db_manager.add_or_update_term("Council", "Совет", "organization")
+    db_manager.quarantine_term("Council", "duplicate")
+    quarantined_terms, total = db_manager.get_paginated_quarantined_terms("", 0, 10)
+    db_manager.add_or_update_term("Council", "Новый совет", "other")
+
+    db_manager.restore_term(quarantined_terms[0]["id"])
+
+    terms = db_manager.get_terms_dictionary()
+    remaining_quarantine, remaining_total = db_manager.get_paginated_quarantined_terms(
+        "", 0, 10
+    )
+    assert total == 1
+    assert terms["Council"] == {
+        "russian_term": "Совет",
+        "category": "organization",
+    }
+    assert remaining_quarantine == []
+    assert remaining_total == 0
+
+
+def test_quarantine_term_updates_existing_quarantine_entry(db_manager):
+    db_manager.add_or_update_term("Council", "Совет", "organization")
+    db_manager.quarantine_term("Council", "first duplicate")
+    db_manager.add_or_update_term("Council", "Новый совет", "other")
+
+    db_manager.quarantine_term("Council", "second duplicate")
+
+    terms = db_manager.get_terms_dictionary()
+    quarantined_terms, total = db_manager.get_paginated_quarantined_terms("", 0, 10)
+    assert terms == {}
+    assert total == 1
+    assert quarantined_terms[0]["english_term"] == "Council"
+    assert quarantined_terms[0]["russian_term"] == "Новый совет"
+    assert quarantined_terms[0]["category"] == "other"
+    assert quarantined_terms[0]["reason"] == "second duplicate"

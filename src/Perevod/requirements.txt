@@ -1,24 +1,24 @@
-# Этот файл содержит список библиотек, необходимых для работы проекта.
-#
-# 1. Установите эти библиотеки командой:
-#    pip install -r requirements.txt
-#
-# 2. После этого загрузите языковую модель для spaCy:
-#    python -m spacy download en_core_web_sm
-
 # Основной фреймворк для работы с LLM
-google-generativeai
+google-genai>=1.0.0
 
 # Графический интерфейс
 customtkinter>=5.2.0
 
-# Обработка естественного языка (NER, сегментация предложений)
-spacy>=3.0.0
+# Семантический поиск (векторная БД)
+chromadb>=0.4.24
 
-# Семантический поиск (переранжирование)
-sentence-transformers
+# Опционально для тяжелого reranker:
+# pip install -e ".[reranker]"
 
 # Ядро системы агентов
-langgraph
-pymorphy3
+langgraph>=0.2.0
+
+# Морфологический анализ для скриптов
+pymorphy3>=2.0.0
 pymorphy3-dicts-ru
+
+# Работа с базой данных
+SQLAlchemy>=2.0.0
+
+# Валидация и конфигурация
+pydantic-settings>=2.0.0

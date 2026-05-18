@@ -1,5 +1,0 @@
-Fix: Implement case-preserving text replacement and refactor ProjectManager path handling.
-
-- Reverted `replace_with_case` in `src/Perevod/agents/tools.py` to preserve case during text replacement.
-- Updated `ProjectManager` in `src/Perevod/project_manager.py` to use `PROJECT_ROOT` for database path handling.
-- Removed `Annotated` and `add` from `processed_chapters` and `unification_verdicts` in `src/Perevod/agents/state.py` for simplification.

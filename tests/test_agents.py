@@ -1,49 +1,39 @@
-# tests/test_agents.py
-
 import pytest
-from Perevod.agents.semantic_chunker import SemanticChunker
-from src.Perevod.agents.reranker import Reranker
+from unittest.mock import MagicMock, patch
 
-@pytest.fixture(scope="module")
-def chunker():
-    return SemanticChunker(max_chunk_size=150)
+from Perevod.agents.reranker import Reranker
+
 
 @pytest.fixture(scope="module")
 def reranker():
-    return Reranker()
+    model = MagicMock()
+    model.predict.return_value = [0.9, 0.4, 0.2]
+    return Reranker(model=model)
 
-def test_chunker_empty_text(chunker):
-    assert chunker.chunk("") == []
-    assert chunker.chunk("   ") == []
-
-def test_chunker_small_text(chunker):
-    text = "This is a short sentence."
-    assert chunker.chunk(text) == [text]
-
-def test_chunker_long_paragraph(chunker):
-    text = "This is a long sentence that should be split into multiple chunks based on the max_chunk_size parameter. It has several sentences. This is the second one. And this is the third one, just to be sure."
-    chunks = chunker.chunk(text)
-    assert len(chunks) > 1
-    for chunk in chunks:
-        assert len(chunk) <= 150
-
-def test_chunker_multiple_paragraphs(chunker):
-    text = "First paragraph.\n\nSecond paragraph, which is also short."
-    chunks = chunker.chunk(text);
-    assert len(chunks) == 2
-    assert chunks[0] == "First paragraph."
-    assert chunks[1] == "Second paragraph, which is also short."
 
 def test_reranker_empty_list(reranker):
     assert reranker.rerank("query", []) == []
+    reranker.model.predict.assert_not_called()
+
 
 def test_reranker_sorting(reranker):
     query = "What is the capital of France?"
     documents = [
-        {'text': 'Paris is the capital of France.'},
-        {'text': 'The Eiffel Tower is in Paris.'},
-        {'text': 'France is a country in Europe.'}
+        {"text": "Paris is the capital of France."},
+        {"text": "The Eiffel Tower is in Paris."},
+        {"text": "France is a country in Europe."},
     ]
-    reranked = reranker.rerank(query, documents);
+    reranked = reranker.rerank(query, documents)
     assert len(reranked) == 3
-    assert reranked[0]['text'] == 'Paris is the capital of France.'
+    assert reranked[0]["text"] == "Paris is the capital of France."
+
+
+def test_reranker_reports_missing_optional_dependency():
+    reranker = Reranker()
+
+    with patch(
+        "builtins.__import__",
+        side_effect=ImportError("No module named 'sentence_transformers'"),
+    ):
+        with pytest.raises(RuntimeError, match="sentence-transformers"):
+            reranker.rerank("query", [{"text": "document"}])

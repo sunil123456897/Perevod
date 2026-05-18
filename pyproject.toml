@@ -3,18 +3,41 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "Perevod"
+name = "perevod"
 version = "0.1.0"
 authors = [
-  { name="Example Author", email="author@example.com" },
+  { name="sunil123456897" },
 ]
-description = "A small example package"
+description = "Desktop-first novel translation workflow with glossary, RAG, QA, retries and resume support"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
+license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+]
+dependencies = [
+    "chromadb>=0.4.24",
+    "customtkinter>=5.2.0",
+    "google-genai>=1.0.0",
+    "langgraph>=0.2.0",
+    "pymorphy3>=2.0.0",
+    "pymorphy3-dicts-ru",
+    "pydantic-settings>=2.0.0",
+    "SQLAlchemy>=2.0.0",
+]
+
+[project.optional-dependencies]
+reranker = [
+    "sentence-transformers>=3.0.0",
+]
+dev = [
+    "coverage>=7",
+    "pytest>=8",
+    "ruff>=0.6",
+    "tomli>=2; python_version<'3.11'",
 ]
 
 [project.scripts]
@@ -24,3 +47,16 @@ perevod = "Perevod.main:main"
 where = ["src"]
 include = ["*"]
 exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider -p no:pytestqt -p no:anyio -p no:asyncio"
+pythonpath = ["src"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/Perevod"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

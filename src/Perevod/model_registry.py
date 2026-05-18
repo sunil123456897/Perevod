@@ -1,0 +1,100 @@
+from dataclasses import dataclass
+
+
+GEMINI_FLASH = "gemini-3-flash-preview"
+GEMINI_FLASH_LITE = "gemini-3.1-flash-lite-preview"
+GEMINI_EMBEDDING = "gemini-embedding-2"
+
+
+@dataclass(frozen=True)
+class GeminiModelSpec:
+    name: str
+    category: str
+    daily_limit: int | None = None
+    min_interval_seconds: float | None = None
+
+
+MODEL_REGISTRY: dict[str, GeminiModelSpec] = {
+    GEMINI_FLASH: GeminiModelSpec(
+        name=GEMINI_FLASH,
+        category="text",
+        daily_limit=20,
+        min_interval_seconds=12.0,
+    ),
+    GEMINI_FLASH_LITE: GeminiModelSpec(
+        name=GEMINI_FLASH_LITE,
+        category="text",
+        daily_limit=500,
+        min_interval_seconds=4.0,
+    ),
+    GEMINI_EMBEDDING: GeminiModelSpec(
+        name=GEMINI_EMBEDDING,
+        category="embedding",
+        daily_limit=1000,
+    ),
+}
+
+DEFAULT_TASK_MODELS = {
+    "analysis": GEMINI_FLASH_LITE,
+    "curation": GEMINI_FLASH_LITE,
+    "translation": GEMINI_FLASH,
+    "qa": GEMINI_FLASH_LITE,
+    "summarization": GEMINI_FLASH_LITE,
+}
+
+AVAILABLE_TEXT_MODELS = [
+    GEMINI_FLASH,
+    GEMINI_FLASH_LITE,
+]
+
+LEGACY_FREE_TIER_REPLACEMENTS = {
+    "gemini-2.5-flash": GEMINI_FLASH,
+    "gemini-2.5-flash-lite": GEMINI_FLASH_LITE,
+}
+
+LEGACY_EMBEDDING_REPLACEMENTS = {
+    "models/text-embedding-004": GEMINI_EMBEDDING,
+    "text-embedding-004": GEMINI_EMBEDDING,
+}
+
+
+def default_daily_limits() -> dict[str, int]:
+    return {
+        name: spec.daily_limit
+        for name, spec in MODEL_REGISTRY.items()
+        if spec.daily_limit is not None
+    }
+
+
+def model_min_interval_seconds(model_name: str) -> float | None:
+    spec = MODEL_REGISTRY.get((model_name or "").strip())
+    return spec.min_interval_seconds if spec else None
+
+
+def normalize_text_model(model_name: str, *, free_tier_mode: bool) -> str:
+    normalized = (model_name or "").strip()
+    if not free_tier_mode:
+        return normalized
+
+    lowered = normalized.lower()
+    if lowered in LEGACY_FREE_TIER_REPLACEMENTS:
+        return LEGACY_FREE_TIER_REPLACEMENTS[lowered]
+    if lowered.endswith("-pro"):
+        return GEMINI_FLASH
+    return normalized
+
+
+def normalize_model_configs(
+    model_configs: dict[str, str], *, free_tier_mode: bool
+) -> dict[str, str]:
+    return {
+        task_name: normalize_text_model(model_name, free_tier_mode=free_tier_mode)
+        for task_name, model_name in model_configs.items()
+    }
+
+
+def normalize_embedding_model(model_name: str, *, free_tier_mode: bool) -> str:
+    normalized = (model_name or "").strip()
+    if not free_tier_mode:
+        return normalized
+    return LEGACY_EMBEDDING_REPLACEMENTS.get(normalized.lower(), normalized)

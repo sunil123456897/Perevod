@@ -1,377 +1,320 @@
-
 import customtkinter as ctk
 from tkinter import messagebox
-import threading
 import logging
-from Perevod.gui.paginated_editor import PaginatedEditorWindow
+import threading
+from .paginated_editor import TabbedPaginatedEditor
 
 gui_logger = logging.getLogger("NovelTranslator.GUI")
 
-class DictionaryEditorWindow(PaginatedEditorWindow):
+
+class DictionaryEditorWindow(TabbedPaginatedEditor):
     def __init__(self, master, db_manager):
         super().__init__(master, "Редактор Словаря", db_manager)
-        self.all_proposals = []
+
         self.term_widgets = {}
-        self.current_page_proposals = 1
-        self.search_var = ctk.StringVar()
-        self.search_var.trace_add("write", self.load_data) # Trigger data reload on search
+        self.search_var.trace_add("write", lambda *args: self._load_data())
 
-        self.create_widgets() # Call the overridden method
+        # Add search and save controls to the main tab
+        self._setup_main_tab_controls()
 
-    def create_widgets(self):
-        # Create a tab view for Dictionary and Proposals
-        self.tab_view = ctk.CTkTabview(self)
-        self.tab_view.pack(expand=True, fill="both", padx=10, pady=10)
-        self.tab_view.add("Словарь")
-        self.tab_view.add("Предложения")
-        self.tab_view.set("Словарь")
-        self.tab_view.configure(command=self.on_tab_change)
+        self._load_data()
 
-        # --- Dictionary Tab ---
-        terms_tab = self.tab_view.tab("Словарь")
-        terms_tab.grid_columnconfigure(0, weight=1)
-        terms_tab.grid_rowconfigure(2, weight=1) # Row for scrollable frame
+    def _setup_main_tab_controls(self):
+        controls_frame = ctk.CTkFrame(self.main_tab, fg_color="transparent")
+        controls_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        controls_frame.grid_columnconfigure(0, weight=1)
 
-        # Search and Add/Save controls
-        terms_controls_frame = ctk.CTkFrame(terms_tab, fg_color="transparent")
-        terms_controls_frame.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        terms_controls_frame.grid_columnconfigure(1, weight=1)
+        search_entry = ctk.CTkEntry(
+            controls_frame, textvariable=self.search_var, placeholder_text="Поиск..."
+        )
+        search_entry.grid(row=0, column=0, sticky="ew", padx=(0, 5))
 
-        ctk.CTkEntry(terms_controls_frame, textvariable=self.search_var, placeholder_text="Поиск...").grid(row=0, column=0, padx=(0,5), sticky="ew")
-        ctk.CTkButton(terms_controls_frame, text="Добавить новый термин", command=self.add_new_term).grid(row=0, column=2, padx=(0,5))
-        ctk.CTkButton(terms_controls_frame, text="Сохранить все изменения", command=self.save_all_terms, fg_color="#2E7D32", hover_color="#1B5E20").grid(row=0, column=3, padx=(5,0))
+        add_button = ctk.CTkButton(
+            controls_frame, text="Добавить", command=self._add_new_term_entry
+        )
+        add_button.grid(row=0, column=1, padx=5)
 
-        # Pagination for Dictionary tab (from PaginatedEditorWindow)
-        self.pagination_frame.grid(row=1, column=0, sticky="ew", padx=5, pady=5) # Reposition pagination frame
+        save_button = ctk.CTkButton(
+            controls_frame,
+            text="Сохранить",
+            command=self._save_all_terms,
+            fg_color="#2E7D32",
+            hover_color="#1B5E20",
+        )
+        save_button.grid(row=0, column=2, padx=5)
 
-        self.terms_content_frame = ctk.CTkScrollableFrame(terms_tab, label_text="Принятые термины")
-        self.terms_content_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
-        self.terms_content_frame.grid_columnconfigure((0, 1), weight=1)
+        # Re-grid the scrollable frame to be below the controls
+        self.main_scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.main_tab.grid_rowconfigure(1, weight=1)
 
-        # --- Proposals Tab ---
-        proposals_tab = self.tab_view.tab("Предложения")
-        proposals_tab.grid_columnconfigure(0, weight=1)
-        proposals_tab.grid_rowconfigure(1, weight=1)
+    def _load_data(self):
+        """Loads both terms and proposals using pagination."""
+        gui_logger.info("--- DictionaryEditor: Загрузка данных... ---")
+        query = self.search_var.get()
+        
+        try:
+            terms_data, total_terms = self.db_manager.get_paginated_terms(query, self.current_page, self.items_per_page)
+            self.total_items = total_terms
+            
+            proposals_data, total_proposals = self.db_manager.get_paginated_dictionary_proposals(query, self.current_page, self.items_per_page)
+            
+            gui_logger.info(f"Загружено {len(terms_data)} терминов (всего {total_terms}).")
+            gui_logger.info(f"Загружено {len(proposals_data)} предложений (всего {total_proposals}).")
 
-        proposals_controls = ctk.CTkFrame(proposals_tab, fg_color="transparent")
-        proposals_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        proposals_controls.grid_columnconfigure(1, weight=1)
-        self.accept_all_btn = ctk.CTkButton(proposals_controls, text="✓ Принять все", command=self.accept_all_proposals, fg_color="#2E7D32", hover_color="#1B5E20")
-        self.accept_all_btn.grid(row=0, column=0, padx=(0,5))
-        self.reject_all_btn = ctk.CTkButton(proposals_controls, text="✗ Отклонить все", command=self.reject_all_proposals, fg_color="#D32F2F", hover_color="#B71C1C")
-        self.reject_all_btn.grid(row=0, column=2, padx=(5,0))
+            self._display_page(terms_data, proposals_data)
+        except Exception as e:
+            gui_logger.error(f"Критическая ошибка при загрузке данных словаря: {e}", exc_info=True)
+            messagebox.showerror("Ошибка загрузки", f"Не удалось загрузить данные словаря: {e}")
 
-        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_tab, label_text="Предложения от ИИ")
-        self.proposals_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.proposals_content_frame.grid_columnconfigure(0, weight=1)
-
-        self.proposals_nav_frame = ctk.CTkFrame(proposals_tab, fg_color="transparent")
-        self.proposals_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        self.proposals_nav_frame.grid_columnconfigure(1, weight=1)
-        self.prev_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="< Назад", command=lambda: self.change_page_proposals(-1))
-        self.prev_proposals_btn.grid(row=0, column=0)
-        self.page_label_proposals = ctk.CTkLabel(self.proposals_nav_frame, text="Страница 1 / 1")
-        self.page_label_proposals.grid(row=0, column=1)
-        self.next_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="Вперед >", command=lambda: self.change_page_proposals(1))
-        self.next_proposals_btn.grid(row=0, column=2)
-
-        # Initial data load
-        self.load_data()
-
-    def load_data(self, *args):
-        # Load terms
-        query = self.search_var.get().lower()
-        all_terms = self.db_manager.get_all_terms()
-        self.all_items = sorted(all_terms, key=lambda x: x['english_term'].lower())
-        self.term_widgets = {}
-        for term in self.all_items:
-            term['is_new'] = False
-            term['is_modified'] = False
-            self.term_widgets[term['english_term']] = {'eng_var': ctk.StringVar(value=term['english_term']), 'rus_var': ctk.StringVar(value=term['russian_term'])}
-
-        # Filter terms based on search query
-        self.filtered_items = [t for t in self.all_items if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
-        self.total_items = len(self.filtered_items)
-        self.current_page = 0 # Reset to first page on data load/filter
-        self.update_pagination_info()
-        self.display_page()
-
-        # Load proposals (separate from paginated terms)
-        all_proposals = list(self.db_manager.get_dictionary_proposals().values())
-        self.all_proposals = sorted(all_proposals, key=lambda x: x['english_term'].lower())
-        self.render_proposals_page(self.all_proposals) # Render all proposals, pagination handled internally
-
-    def display_page(self):
-        # This method is called by PaginatedEditorWindow to display the current page of terms
-        for widget in self.terms_content_frame.winfo_children():
+    def _display_page(self, terms, proposals):
+        # Clear previous content
+        for widget in self.main_scrollable_frame.winfo_children():
+            widget.destroy()
+        for widget in self.proposals_scrollable_frame.winfo_children():
             widget.destroy()
 
-        ctk.CTkLabel(self.terms_content_frame, text="Английский термин", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        ctk.CTkLabel(self.terms_content_frame, text="Русский перевод", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        # Render headers
+        ctk.CTkLabel(
+            self.main_scrollable_frame,
+            text="Английский термин",
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(
+            self.main_scrollable_frame,
+            text="Русский перевод",
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        ctk.CTkLabel(
+            self.proposals_scrollable_frame,
+            text="Предложенный термин (Англ -> Рус)",
+            font=ctk.CTkFont(weight="bold"),
+        ).grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-        start_index = self.current_page * self.items_per_page
-        end_index = start_index + self.items_per_page
-        page_terms = self.filtered_items[start_index:end_index]
-
-        for i, term_data in enumerate(page_terms):
-            original_eng = term_data['english_term']
-            widget_vars = self.term_widgets[original_eng]
-
-            eng_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['eng_var'])
-            eng_entry.grid(row=i + 1, column=0, padx=5, pady=2, sticky="ew")
-            rus_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['rus_var'])
-            rus_entry.grid(row=i + 1, column=1, padx=5, pady=2, sticky="ew")
-
-            widget_vars['eng_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
-            widget_vars['rus_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
-
-            delete_btn = ctk.CTkButton(self.terms_content_frame, text="X", width=25, command=lambda oe=original_eng: self.delete_term(oe))
-            delete_btn.grid(row=i + 1, column=2, padx=5, pady=2)
-
-    def on_tab_change(self):
-        # When tab changes, ensure pagination info is updated for the active tab
-        if self.tab_view.get() == "Словарь":
-            self.update_pagination_info()
-        elif self.tab_view.get() == "Предложения":
-            # Proposals tab has its own pagination logic
-            pass
-
-    def change_page(self, delta):
-        # This method is now handled by PaginatedEditorWindow's prev_page/next_page
-        super().change_page(delta)
-
-    def change_page_proposals(self, delta):
-        # This remains for proposals tab
-        total_pages = (len(self.all_proposals) + self.items_per_page - 1) // self.items_per_page
-        new_page = self.current_page_proposals + delta
-        if 1 <= new_page <= total_pages:
-            self.current_page_proposals = new_page
-            self.render_proposals_page(self.all_proposals) # Re-render with new page
-        self.tab_view.add("Словарь")
-        self.tab_view.add("Предложения")
-        self.tab_view.set("Словарь")
-        self.tab_view.configure(command=self.on_tab_change)
-
-        # --- Вкладка "Словарь" ---
-        terms_frame = self.tab_view.tab("Словарь")
-        terms_frame.grid_columnconfigure(0, weight=1); terms_frame.grid_rowconfigure(1, weight=1)
-        
-        terms_controls = ctk.CTkFrame(terms_frame, fg_color="transparent")
-        terms_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        terms_controls.grid_columnconfigure(1, weight=1)
-        self.add_term_btn = ctk.CTkButton(terms_controls, text="Добавить новый термин", command=self.add_new_term)
-        self.add_term_btn.grid(row=0, column=0, padx=(0,5))
-        self.save_terms_btn = ctk.CTkButton(terms_controls, text="Сохранить все изменения", command=self.save_all_terms, fg_color="#2E7D32", hover_color="#1B5E20")
-        self.save_terms_btn.grid(row=0, column=2, padx=(5,0))
-
-        self.terms_content_frame = ctk.CTkScrollableFrame(terms_frame, label_text="Принятые термины")
-        self.terms_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.terms_content_frame.grid_columnconfigure((0, 1), weight=1)
-
-        self.terms_nav_frame = ctk.CTkFrame(terms_frame, fg_color="transparent")
-        self.terms_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        self.terms_nav_frame.grid_columnconfigure(1, weight=1)
-        self.prev_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="< Назад", command=lambda: self.change_page(-1))
-        self.prev_terms_btn.grid(row=0, column=0)
-        self.page_label_terms = ctk.CTkLabel(self.terms_nav_frame, text="Страница 1 / 1")
-        self.page_label_terms.grid(row=0, column=1)
-        self.next_terms_btn = ctk.CTkButton(self.terms_nav_frame, text="Вперед >", command=lambda: self.change_page(1))
-        self.next_terms_btn.grid(row=0, column=2)
-
-        # --- Вкладка "Предложения" ---
-        proposals_frame = self.tab_view.tab("Предложения")
-        proposals_frame.grid_columnconfigure(0, weight=1); proposals_frame.grid_rowconfigure(1, weight=1)
-
-        proposals_controls = ctk.CTkFrame(proposals_frame, fg_color="transparent")
-        proposals_controls.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
-        proposals_controls.grid_columnconfigure(1, weight=1)
-        self.accept_all_btn = ctk.CTkButton(proposals_controls, text="✓ Принять все", command=self.accept_all_proposals, fg_color="#2E7D32", hover_color="#1B5E20")
-        self.accept_all_btn.grid(row=0, column=0, padx=(0,5))
-        self.reject_all_btn = ctk.CTkButton(proposals_controls, text="✗ Отклонить все", command=self.reject_all_proposals, fg_color="#D32F2F", hover_color="#B71C1C")
-        self.reject_all_btn.grid(row=0, column=2, padx=(5,0))
-
-        self.proposals_content_frame = ctk.CTkScrollableFrame(proposals_frame, label_text="Предложения от ИИ")
-        self.proposals_content_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-        self.proposals_content_frame.grid_columnconfigure(0, weight=1)
-
-        self.proposals_nav_frame = ctk.CTkFrame(proposals_frame, fg_color="transparent")
-        self.proposals_nav_frame.grid(row=2, column=0, sticky="ew", padx=5, pady=5)
-        self.proposals_nav_frame.grid_columnconfigure(1, weight=1)
-        self.prev_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="< Назад", command=lambda: self.change_page_proposals(-1))
-        self.prev_proposals_btn.grid(row=0, column=0)
-        self.page_label_proposals = ctk.CTkLabel(self.proposals_nav_frame, text="Страница 1 / 1")
-        self.page_label_proposals.grid(row=0, column=1)
-        self.next_proposals_btn = ctk.CTkButton(self.proposals_nav_frame, text="Вперед >", command=lambda: self.change_page_proposals(1))
-        self.next_proposals_btn.grid(row=0, column=2)
-
-        self._create_action_buttons([{"text": "Закрыть", "command": self.destroy}])
-
-    def _load_data_thread(self):
-        try:
-            db_terms = self.db_manager.get_all_terms()
-            db_proposals = list(self.db_manager.get_dictionary_proposals().values())
-            self.after(0, self._populate_ui, db_terms, db_proposals)
-        except Exception as e:
-            gui_logger.error(f"Ошибка загрузки данных словаря: {e}", exc_info=True)
-            self.after(0, messagebox.showerror, "Ошибка", f"Не удалось загрузить данные словаря: {e}")
-
-    def _populate_ui(self, terms, proposals):
-        self.all_items = sorted(terms, key=lambda x: x['english_term'].lower())
-        self.all_proposals = sorted(proposals, key=lambda x: x['english_term'].lower())
+        # Render items
         self.term_widgets = {}
-        for term in self.all_items:
-            term['is_new'] = False
-            term['is_modified'] = False
-            self.term_widgets[term['english_term']] = {'eng_var': ctk.StringVar(value=term['english_term']), 'rus_var': ctk.StringVar(value=term['russian_term'])}
+        for i, item in enumerate(terms):
+            self._render_main_item(item, self.main_scrollable_frame, i + 1)
 
-        self.current_page = 1
-        self.current_page_proposals = 1
-        self.filter_entries()
+        for i, item in enumerate(proposals):
+            self._render_proposal_item(item, self.proposals_scrollable_frame, i + 1)
 
-    def on_tab_change(self):
-        self.filter_entries()
+        self._update_pagination_label()
 
-    def render_page(self, terms_to_render):
-        for widget in self.terms_content_frame.winfo_children(): widget.destroy()
-        ctk.CTkLabel(self.terms_content_frame, text="Английский термин", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        ctk.CTkLabel(self.terms_content_frame, text="Русский перевод", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        
-        start_index = (self.current_page - 1) * self.items_per_page
-        end_index = start_index + self.items_per_page
-        page_terms = terms_to_render[start_index:end_index]
+    def _render_main_item(self, item, frame, index):
+        """Renders a single dictionary term entry."""
+        # Configure the frame's columns to expand
+        frame.grid_columnconfigure((0, 1), weight=1)
 
-        for i, term_data in enumerate(page_terms):
-            original_eng = term_data['english_term']
-            widget_vars = self.term_widgets[original_eng]
-            
-            eng_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['eng_var'])
-            eng_entry.grid(row=i + 1, column=0, padx=5, pady=2, sticky="ew")
-            rus_entry = ctk.CTkEntry(self.terms_content_frame, textvariable=widget_vars['rus_var'])
-            rus_entry.grid(row=i + 1, column=1, padx=5, pady=2, sticky="ew")
-            
-            widget_vars['eng_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
-            widget_vars['rus_var'].trace_add("write", lambda *args, oe=original_eng: self.mark_as_modified(oe))
+        original_eng = item["english_term"]
 
-            delete_btn = ctk.CTkButton(self.terms_content_frame, text="X", width=25, command=lambda oe=original_eng: self.delete_term(oe))
-            delete_btn.grid(row=i + 1, column=2, padx=5, pady=2)
+        eng_var = ctk.StringVar(value=item["english_term"])
+        rus_var = ctk.StringVar(value=item["russian_term"])
 
-        total_pages = (len(terms_to_render) + self.items_per_page - 1) // self.items_per_page
-        self.page_label_terms.configure(text=f"Страница {self.current_page} / {max(1, total_pages)}")
-        self.prev_terms_btn.configure(state="normal" if self.current_page > 1 else "disabled")
-        self.next_terms_btn.configure(state="normal" if self.current_page < total_pages else "disabled")
+        self.term_widgets[original_eng] = {
+            "eng_var": eng_var,
+            "rus_var": rus_var,
+            "is_new": item.get("is_new", False),
+            "is_modified": False,
+            "category": item["category"],
+        }
 
-    def render_proposals_page(self, proposals_to_render):
-        for widget in self.proposals_content_frame.winfo_children(): widget.destroy()
-        ctk.CTkLabel(self.proposals_content_frame, text="Предложенный термин (Англ -> Рус)", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        eng_entry = ctk.CTkEntry(frame, textvariable=eng_var)
+        eng_entry.grid(row=index, column=0, padx=5, pady=2, sticky="ew")
 
-        start_index = (self.current_page_proposals - 1) * self.items_per_page
-        end_index = start_index + self.items_per_page
-        page_proposals = proposals_to_render[start_index:end_index]
+        rus_entry = ctk.CTkEntry(frame, textvariable=rus_var)
+        rus_entry.grid(row=index, column=1, padx=5, pady=2, sticky="ew")
 
-        for i, data in enumerate(page_proposals):
-            eng = data['english_term']
-            frame = ctk.CTkFrame(self.proposals_content_frame, fg_color="transparent")
-            frame.grid(row=i + 1, column=0, columnspan=3, sticky="ew", pady=2)
-            frame.grid_columnconfigure(0, weight=1)
-            label_text = f"{eng}  →  {data['russian_term']} (conf: {data.get('confidence', 0):.2f})"
-            label = ctk.CTkLabel(frame, text=label_text, anchor="w"); label.grid(row=0, column=0, sticky="ew", padx=5)
-            btn_accept = ctk.CTkButton(frame, text="✓", width=25, command=lambda e=eng, d=data: self.accept_proposal(e, d['russian_term'], d['category']))
-            btn_accept.grid(row=0, column=1, padx=(0, 5))
-            btn_reject = ctk.CTkButton(frame, text="✗", width=25, command=lambda e=eng: self.reject_proposal(e))
-            btn_reject.grid(row=0, column=2, padx=(0, 5))
+        eng_var.trace_add(
+            "write", lambda *args, oe=original_eng: self._mark_as_modified(oe)
+        )
+        rus_var.trace_add(
+            "write", lambda *args, oe=original_eng: self._mark_as_modified(oe)
+        )
 
-        total_pages = (len(proposals_to_render) + self.items_per_page - 1) // self.items_per_page
-        self.page_label_proposals.configure(text=f"Страница {self.current_page_proposals} / {max(1, total_pages)}")
-        self.prev_proposals_btn.configure(state="normal" if self.current_page_proposals > 1 else "disabled")
-        self.next_proposals_btn.configure(state="normal" if self.current_page_proposals < total_pages else "disabled")
+        delete_btn = ctk.CTkButton(
+            frame,
+            text="X",
+            width=25,
+            command=lambda oe=original_eng: self._delete_term(oe),
+        )
+        delete_btn.grid(row=index, column=2, padx=5, pady=2)
 
-    def mark_as_modified(self, original_eng):
-        term = next((t for t in self.all_items if t['english_term'] == original_eng), None)
-        if term: term['is_modified'] = True
+    def _render_proposal_item(self, item, frame, index):
+        """Renders a single proposal entry."""
+        eng = item["english_term"]
 
-    def add_new_term(self):
-        new_term_id = f"__new_{len([t for t in self.all_items if t.get('is_new')])}"
-        new_term = {'english_term': new_term_id, 'russian_term': '', 'category': 'other', 'is_new': True, 'is_modified': True}
-        self.all_items.insert(0, new_term)
-        self.term_widgets[new_term_id] = {'eng_var': ctk.StringVar(value=''), 'rus_var': ctk.StringVar(value='')}
-        self.filter_entries()
+        proposal_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        proposal_frame.grid(row=index, column=0, columnspan=3, sticky="ew", pady=2)
+        proposal_frame.grid_columnconfigure(0, weight=1)
 
-    def save_all_terms(self):
+        label_text = (
+            f"{eng}  →  {item['russian_term']} (conf: {item.get('confidence', 0):.2f})"
+        )
+        label = ctk.CTkLabel(proposal_frame, text=label_text, anchor="w")
+        label.grid(row=0, column=0, sticky="ew", padx=5)
+
+        btn_accept = ctk.CTkButton(
+            proposal_frame,
+            text="✓",
+            width=25,
+            command=lambda e=eng, d=item: self._accept_proposal(
+                e, d["russian_term"], d["category"]
+            ),
+        )
+        btn_accept.grid(row=0, column=1, padx=(0, 5))
+
+        btn_reject = ctk.CTkButton(
+            proposal_frame,
+            text="✗",
+            width=25,
+            command=lambda e=eng: self._reject_proposal(e),
+        )
+        btn_reject.grid(row=0, column=2, padx=(0, 5))
+
+    def _mark_as_modified(self, original_eng):
+        if original_eng in self.term_widgets:
+            self.term_widgets[original_eng]["is_modified"] = True
+
+    def _add_new_term_entry(self):
+        # This is a simplified version. A more robust implementation would handle multiple new terms.
+        new_term_id = (
+            f"__new_{len([t for t in self.term_widgets.values() if t.get('is_new')])}"
+        )
+        new_item = {
+            "english_term": new_term_id,
+            "russian_term": "",
+            "category": "other",
+            "is_new": True,
+        }
+        self._render_main_item(
+            new_item, self.main_scrollable_frame, len(self.term_widgets) + 1
+        )
+        # Make the new entry visible
+        self.main_scrollable_frame._parent_canvas.yview_moveto(1.0)
+
+    def _save_all_terms(self):
         try:
-            for term_data in self.all_items:
-                if not term_data.get('is_modified'): continue
-                
-                original_eng = term_data['english_term']
-                widget_vars = self.term_widgets[original_eng]
-                new_eng = widget_vars['eng_var'].get().strip()
-                new_rus = widget_vars['rus_var'].get().strip()
+            for original_eng, data in self.term_widgets.items():
+                if not data.get("is_modified"):
+                    continue
 
-                if term_data.get('is_new'):
+                new_eng = data["eng_var"].get().strip()
+                new_rus = data["rus_var"].get().strip()
+
+                if data.get("is_new"):
                     if new_eng and new_rus:
-                        self.db_manager.add_or_update_term(new_eng, new_rus, term_data['category'])
+                        self.db_manager.add_or_update_term(
+                            new_eng, new_rus, data["category"]
+                        )
                 elif new_eng and new_rus:
                     if original_eng != new_eng:
                         self.db_manager.delete_term(original_eng)
-                    self.db_manager.add_or_update_term(new_eng, new_rus, term_data['category'])
-                else: # Term was deleted
-                    self.db_manager.delete_term(original_eng)
+                    self.db_manager.add_or_update_term(
+                        new_eng, new_rus, data["category"]
+                    )
 
-            gui_logger.info("Словарь сохранен."); threading.Thread(target=self._load_data_thread, daemon=True).start()
+            gui_logger.info("Словарь сохранен.")
+            self._load_data()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось сохранить словарь: {e}")
             gui_logger.error(f"Ошибка сохранения словаря: {e}", exc_info=True)
 
-    def delete_term(self, original_eng):
-        self.all_items = [t for t in self.all_items if t['english_term'] != original_eng]
-        self.term_widgets.pop(original_eng, None)
-        self.db_manager.delete_term(original_eng) # Direct delete for simplicity
-        self.filter_entries()
+    def _delete_term(self, original_eng):
+        if not messagebox.askyesno(
+            "Подтверждение",
+            f"Удалить термин '{original_eng}'? Это действие также удалит его из семантического индекса.",
+        ):
+            return
 
-    def accept_proposal(self, eng, rus, cat):
+        kb_manager = self.master.kb_manager
+        if not kb_manager:
+            messagebox.showerror("Ошибка", "Менеджер базы знаний не инициализирован.")
+            return
+
+        vector_id = f"dict_{original_eng}"
+        
+        # [ИСПРАВЛЕНИЕ]: Разделяем операции для повышения отказоустойчивости
+        try:
+            # Шаг 1: Удаляем из векторной базы
+            kb_manager.delete_entries(ids=[vector_id])
+            gui_logger.info(f"Вектор для термина '{original_eng}' успешно удален из ChromaDB.")
+        except Exception as e:
+            error_msg = f"Критическая ошибка при удалении вектора для '{original_eng}': {e}"
+            gui_logger.critical(error_msg, exc_info=True)
+            messagebox.showerror("Ошибка ChromaDB", f"{error_msg}\n\nОперация отменена. Запись в основной БД не затронута.")
+            return # Прерываем операцию
+
+        try:
+            # Шаг 2: Удаляем из основной базы (только если шаг 1 успешен)
+            self.db_manager.delete_term(original_eng)
+            gui_logger.info(f"Термин '{original_eng}' успешно удален из основной БД.")
+        except Exception as e:
+            error_msg = f"Критическая ошибка при удалении термина '{original_eng}' из основной БД: {e}"
+            # УСИЛЕННОЕ ЛОГИРОВАНИЕ: Явно указываем на рассинхронизацию.
+            critical_alert = (
+                f"ДАННЫЕ РАССИНХРОНИЗИРОВАНЫ! Вектор для '{original_eng}' был удален из ChromaDB, "
+                f"но запись НЕ УДАЛОСЬ удалить из SQLite. Требуется ручное вмешательство. Ошибка: {e}"
+            )
+            gui_logger.critical(critical_alert, exc_info=True)
+            messagebox.showerror(
+                "Критическая Ошибка SQLite",
+                critical_alert,
+            )
+            return # Прерываем операцию
+
+        # Обновляем интерфейс только после полного успеха
+        self._load_data()
+        self.master.update_index_status()
+
+    def _accept_proposal(self, eng, rus, cat):
         self.db_manager.add_or_update_term(eng, rus, cat)
         self.db_manager.delete_dictionary_proposal(eng)
-        threading.Thread(target=self._load_data_thread, daemon=True).start()
-    def reject_proposal(self, eng):
+        self._load_data()
+
+    def _reject_proposal(self, eng):
         self.db_manager.delete_dictionary_proposal(eng)
-        threading.Thread(target=self._load_data_thread, daemon=True).start()
+        self._load_data()
+
     def accept_all_proposals(self):
-        if messagebox.askyesno("Подтверждение", "Принять все видимые предложения?"):
-            for p in self.all_proposals:
-                self.db_manager.add_or_update_term(p['english_term'], p['russian_term'], p['category'])
+        if messagebox.askyesno("Подтверждение", "Принять все предложения?"):
+            threading.Thread(
+                target=self._accept_all_proposals_thread, daemon=True
+            ).start()
+
+    def _accept_all_proposals_thread(self):
+        try:
+            all_proposals, _ = self.db_manager.get_paginated_dictionary_proposals(query="", page=0, per_page=0, limit=10000)
+            for proposal in all_proposals:
+                self.db_manager.add_or_update_term(
+                    proposal["english_term"],
+                    proposal["russian_term"],
+                    proposal["category"],
+                )
             self.db_manager.clear_dictionary_proposals()
-            threading.Thread(target=self._load_data_thread, daemon=True).start()
+            self.after(0, self._load_data)
+            gui_logger.info(
+                f"Принято и добавлено в словарь {len(all_proposals)} предложений."
+            )
+        except Exception as e:
+            gui_logger.error(
+                f"Ошибка при принятии всех предложений: {e}", exc_info=True
+            )
+            messagebox.showerror("Ошибка", f"Не удалось принять все предложения: {e}")
+
     def reject_all_proposals(self):
         if messagebox.askyesno("Подтверждение", "Отклонить все предложения?"):
+            threading.Thread(
+                target=self._reject_all_proposals_thread, daemon=True
+            ).start()
+
+    def _reject_all_proposals_thread(self):
+        try:
+            count = self.db_manager.count_dictionary_proposals()
             self.db_manager.clear_dictionary_proposals()
-            threading.Thread(target=self._load_data_thread, daemon=True).start()
-
-    def filter_entries(self, *args):
-        query = self.search_var.get().lower()
-        
-        # Фильтрация для Словаря
-        filtered_terms = [t for t in self.all_items if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
-        self.current_page = 1
-        self.render_page(filtered_terms)
-
-        # Фильтрация для Предложений
-        filtered_proposals = [p for p in self.all_proposals if query in p['english_term'].lower() or query in p['russian_term'].lower()]
-        self.current_page_proposals = 1
-        self.render_proposals_page(filtered_proposals)
-
-    def change_page(self, delta):
-        query = self.search_var.get().lower()
-        filtered_terms = [t for t in self.all_items if query in t['english_term'].lower() or query in self.term_widgets[t['english_term']]['rus_var'].get().lower()]
-        total_pages = (len(filtered_terms) + self.items_per_page - 1) // self.items_per_page
-        new_page = self.current_page + delta
-        if 1 <= new_page <= total_pages:
-            self.current_page = new_page
-            self.render_page(filtered_terms)
-
-    def change_page_proposals(self, delta):
-        query = self.search_var.get().lower()
-        filtered_proposals = [p for p in self.all_proposals if query in p['english_term'].lower() or query in p['russian_term'].lower()]
-        total_pages = (len(filtered_proposals) + self.items_per_page - 1) // self.items_per_page
-        new_page = self.current_page_proposals + delta
-        if 1 <= new_page <= total_pages:
-            self.current_page_proposals = new_page
-            self.render_proposals_page(filtered_proposals)
+            self.after(0, self._load_data)
+            gui_logger.info(f"Отклонено {count} предложений.")
+        except Exception as e:
+            gui_logger.error(
+                f"Ошибка при отклонении всех предложений: {e}", exc_info=True
+            )
+            messagebox.showerror("Ошибка", f"Не удалось отклонить все предложения: {e}")
