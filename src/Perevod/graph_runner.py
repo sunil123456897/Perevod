@@ -796,6 +796,42 @@ def _build_model_run_config(project_settings: dict) -> tuple[dict[str, str], str
     return model_configs, embedding_model, free_tier_mode
 
 
+def _parse_chapter_filter(spec: str) -> set[int] | None:
+    """Парсит фильтр глав: "591-603", "591,593,600", или None при ошибке.
+
+    Возвращает множество номеров глав или None, если спека невалидна
+    (в этом случае фильтр не применяется — предохранение от молчаливой
+    фильтрации всех глав).
+    """
+    if not spec or not str(spec).strip():
+        return None
+    text = str(spec).strip()
+    allowed: set[int] = set()
+    try:
+        for part in text.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "-" in part:
+                lo_s, hi_s = part.split("-", 1)
+                lo, hi = int(lo_s.strip()), int(hi_s.strip())
+                if lo > hi:
+                    lo, hi = hi, lo
+                allowed.update(range(lo, hi + 1))
+            else:
+                allowed.add(int(part))
+    except ValueError:
+        logger.warning("Невалидный фильтр глав '%s' — игнорируется.", text)
+        return None
+    return allowed or None
+
+
+def _chapter_number(file_name: str) -> int | None:
+    """Извлекает ведущий номер главы из имени файла ('Chapter 591 ...' -> 591)."""
+    match = re.search(r"(\d+)", os.path.basename(file_name))
+    return int(match.group(1)) if match else None
+
+
 def _build_run_metadata(
     *,
     input_dir: str,
@@ -803,6 +839,7 @@ def _build_run_metadata(
     overwrite_existing: bool,
     retry_failed: bool,
     retry_incomplete: bool,
+    rejudge_existing: bool,
     model_configs: dict[str, str],
     embedding_model: str,
     free_tier_mode: bool,
@@ -813,6 +850,7 @@ def _build_run_metadata(
         "overwrite_existing": overwrite_existing,
         "retry_failed": retry_failed,
         "retry_incomplete": retry_incomplete,
+        "rejudge_existing": rejudge_existing,
         "gemini_free_tier_mode": free_tier_mode,
         "model_configs": model_configs,
         "embedding_model": embedding_model,
@@ -1201,6 +1239,18 @@ def run_translation_workflow(
                 and f.lower().endswith((".txt", ".md"))
             ]
         )
+        chapter_filter = project_settings.get("chapter_filter")
+        if chapter_filter:
+            allowed = _parse_chapter_filter(chapter_filter)
+            if allowed is not None:
+                all_files = [
+                    f for f in all_files if _chapter_number(f) in allowed
+                ]
+                logger.info(
+                    "Фильтр глав %s: обработке подлежит %d глав.",
+                    chapter_filter,
+                    len(all_files),
+                )
     except FileNotFoundError:
         raise FileNotFoundError(f"Директория ввода '{input_dir}' не найдена.")
     except Exception:
@@ -1211,6 +1261,7 @@ def run_translation_workflow(
 
     retry_failed = project_settings.get("retry_failed", False)
     retry_incomplete = project_settings.get("retry_incomplete", False)
+    rejudge_existing = project_settings.get("rejudge_existing", False)
     model_configs, embedding_model, free_tier_mode = _build_model_run_config(
         project_settings
     )
@@ -1220,6 +1271,7 @@ def run_translation_workflow(
         overwrite_existing=overwrite_existing,
         retry_failed=retry_failed,
         retry_incomplete=retry_incomplete,
+        rejudge_existing=rejudge_existing,
         model_configs=model_configs,
         embedding_model=embedding_model,
         free_tier_mode=free_tier_mode,
@@ -1305,6 +1357,19 @@ def run_translation_workflow(
                 if has_refine and prev_judge_pass is False:
                     chapter_data["force_rejudge"] = True
                     planned_chapter["force_rejudge"] = True
+        elif rejudge_existing and output_exists:
+            # Режим пере-судейства: используем готовый файл перевода (без повторного
+            # обращения к API перевода) и форсируем запуск Judge по новым правилам.
+            should_process = True
+            chapter_data["reuse_existing_translation"] = True
+            chapter_data["force_rejudge"] = True
+            planned_chapter["reuse_existing_translation"] = True
+            planned_chapter["force_rejudge"] = True
+            logger.info(
+                "Rejudge-режим: глава '%s' будет перепроверена судьёй по новым правилам "
+                "(существующий перевод используется без повторного запроса к API).",
+                title,
+            )
 
         if should_process:
             chapters_to_process.append(chapter_data)

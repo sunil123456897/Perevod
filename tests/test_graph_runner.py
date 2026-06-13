@@ -15,6 +15,8 @@ from src.Perevod.graph_runner import (
     _checkpoint_run_to_report_chapter,
     _remaining_quality_error,
     _write_workflow_report,
+    _parse_chapter_filter,
+    _chapter_number,
 )
 from Perevod.config import PROJECT_ROOT
 from Perevod.utils.api_errors import ApiErrorInfo, GeminiAPIError
@@ -4314,3 +4316,38 @@ class TestGraphRunner(unittest.TestCase):
         
         # Не должен возвращать True при include_incomplete=False
         self.assertFalse(_should_retry_checkpoint_run(run_passed, include_incomplete=False))
+
+
+class TestChapterFilter(unittest.TestCase):
+    def test_parse_range(self):
+        self.assertEqual(_parse_chapter_filter("591-603"), set(range(591, 604)))
+
+    def test_parse_list(self):
+        self.assertEqual(_parse_chapter_filter("591,593,600"), {591, 593, 600})
+
+    def test_parse_mixed_range_and_single(self):
+        self.assertEqual(
+            _parse_chapter_filter("591-593, 601"),
+            {591, 592, 593, 601},
+        )
+
+    def test_parse_reversed_range(self):
+        self.assertEqual(_parse_chapter_filter("603-591"), set(range(591, 604)))
+
+    def test_parse_empty_or_none_returns_none(self):
+        self.assertIsNone(_parse_chapter_filter(""))
+        self.assertIsNone(_parse_chapter_filter(None))
+
+    def test_parse_invalid_returns_none(self):
+        # Невалидный фильтр не должен молча отфильтровать все главы.
+        self.assertIsNone(_parse_chapter_filter("abc"))
+
+    def test_chapter_number_extracts_leading_digits(self):
+        self.assertEqual(_chapter_number("Chapter 591.txt"), 591)
+        self.assertEqual(
+            _chapter_number("Chapter 592 Jade Calabash Dragon Claw.txt"),
+            592,
+        )
+
+    def test_chapter_number_returns_none_without_digits(self):
+        self.assertIsNone(_chapter_number("prologue.txt"))

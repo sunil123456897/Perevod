@@ -78,6 +78,18 @@ def main(argv=None):
         action="store_true",
         help="Перезапустить failed/qa_failed и главы с failed stages/warnings из последнего отчета.",
     )
+    parser.add_argument(
+        "--rejudge-existing",
+        action="store_true",
+        help="Перепроверить судьёй уже переведённые главы по текущим правилам QA "
+        "(без повторного перевода: существующий файл используется как есть, "
+        "при блокирующих замечаниях запускается Refine).",
+    )
+    parser.add_argument(
+        "--chapters",
+        help="Обрабатывать только указанные главы, например '591-603' или '591,593,600'. "
+        "Номер извлекается из имени файла. Без флага обрабатываются все главы в input-dir.",
+    )
     args = parser.parse_args(argv)
     overrides = {
         "input_dir": args.input_dir,
@@ -89,6 +101,10 @@ def main(argv=None):
         overrides["retry_failed"] = True
     if args.retry_incomplete:
         overrides["retry_incomplete"] = True
+    if args.rejudge_existing:
+        overrides["rejudge_existing"] = True
+    if args.chapters:
+        overrides["chapter_filter"] = args.chapters
     return run_cli_translation(args.project, _clean_overrides(overrides))
 
 
