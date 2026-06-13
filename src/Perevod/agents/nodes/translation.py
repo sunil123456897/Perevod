@@ -241,7 +241,20 @@ CRITICAL INSTRUCTIONS:
 1. Strictly Adhere to the Dictionary: You MUST use the translations provided in the <canonical_dictionary> for all listed terms. If a term has multiple alternative translations separated by a slash (/) or semicolon (;), you MUST choose the most natural, premium literary Russian variant suited for the context. This is the highest priority.
 2. Use Knowledge Base: Use the information in <relevant_context> to maintain consistency with characters, locations, and lore.
 3. Literary Quality: The translation must be literary, natural-sounding, and elegant (Senior Editor style), not a literal word-for-word machine translation. Preserve the original tone, pacing, and style.
-4. Avoid AI-slop: NEVER use the following phrases: "стоит отметить", "важно понимать", "следует отметить", "неудивительно, что", "в заключение".
+4. RUSSIAN STYLE (HARD RULES) — these markers instantly betray machine translation and are forbidden:
+   a) Em-dash (—) discipline. Do NOT use "—" as a substitute for a comma, colon, or period. Keep narrative em-dashes under ~3 per 1000 words. Restructure the sentence instead.
+      BAD:  "его защита — самая сильная среди нас"   GOOD: "его защита крепче всех"
+      BAD:  "энергия была чистой — гораздо лучше, чем в пещере"  GOOD: "энергия была куда чище, чем в его пещере"
+      (A dash opening a dialogue line "— ..." is correct and allowed.)
+   b) Gerunds (деепричастные обороты). Do NOT stack them and avoid starting sentences with "Покинув...", "Сосредоточив...", "Завершив...". Convert most gerunds to finite verbs or split into separate sentences. Keep gerund density under ~2.5 per 1000 words.
+      BAD:  "Сосредоточив внимание на лапе, Лу Сюань увидел..."
+      GOOD: "Лу Сюань сосредоточил внимание на лапе и увидел..."
+   c) Filler connectors. Cut "впрочем", "однако", "тем не менее", "разумеется", "к слову", "к счастью", "ведь" wherever the sentence works without them.
+   d) Similes. At most ONE comparison (словно / будто / подобно) per paragraph. Prefer concrete verbs over "like a ..." imagery.
+   e) Do NOT invent content. Never add emotions, adverbs, or assessments absent from the source — no "ликуя про себя", "невольно вздохнул", "воодушевлённый", "эмоционально прокомментировал" unless the English explicitly carries that meaning.
+   f) Do NOT convert narrative into dialogue. If the original sentence is narration (e.g. "Lu Xuan respectfully greeted the cultivator."), keep it narration — do NOT turn it into a spoken line ("— Приветствую вас, — сказал...").
+   g) No aphoristic "punchline" sentences that the source did not have, and no "не только... но и" / "с одной стороны... с другой" formulas unless present in the source.
+   Also NEVER use these literal phrases: "стоит отметить", "важно понимать", "следует отметить", "неудивительно, что", "в заключение".
 5. Completeness: Translate every sentence, paragraph, dialogue line, number, name, and detail. Do not summarize, omit, merge, or explain the chapter.
 6. Formatting: Preserve paragraph breaks and original formatting.
 

@@ -50,7 +50,18 @@ CRITERIA:
 3. Synonym Detection (Self-Learning): If the translation did not use the literal term from the dictionary, but instead translated it using an elegant, correct, and highly literary contextual synonym/alternative in Russian, you MUST detect it, approve it (do not mark as an error/blocking issue), and report it in the "synonym_updates" field.
 4. Names/Gender: Ensure characters have correct names and gender consistency.
 5. Fluency: The Russian text should be literary, natural, and fluent.
-6. AI-slop: Avoid phrases like "Стоит отметить", "Важно понимать", "Неудивительно, что", "в заключение".
+6. MACHINE-STYLE MARKERS (BLOCKING if present). This is critical — these instantly betray AI translation and must be flagged as blocking_issues, not suggestions:
+   a) Em-dash (—) abuse: dashes used as a substitute for commas/periods/restructuring in narration (target <= 3 per 1000 words).
+   b) Gerund stacking (деепричастные обороты): sentences started with "Покинув...", "Сосредоточив...", "Завершив..." or many stacked gerunds (target <= 2.5 per 1000 words). Convert to finite verbs.
+   c) Filler connectors overuse: "впрочем", "однако", "тем не менее", "разумеется", "ведь", "к счастью".
+   d) Invented content: emotions/adverbs not in the source ("ликуя", "невольно вздохнул", "воодушевлённый").
+   e) Narrative turned into dialogue (adding spoken lines absent from the source).
+   f) Aphoristic "punchline" sentences and "не только... но и" / "с одной стороны... с другой" formulas absent from the source.
+   g) Literal AI phrases: "стоит отметить", "важно понимать", "следует отметить", "неудивительно, что", "в заключение".
+   Quoting 2-3 concrete offending snippets from the translation in blocking_issues is required.
+
+DETERMINISTIC STYLE MEASUREMENTS (already computed on this translation — treat as evidence):
+{style_evidence}
 
 CANONICAL DICTIONARY:
 {dictionary}
@@ -128,6 +139,7 @@ Return ONLY valid JSON with this shape:
                 context=chapter_data.get("relevant_context", ""),
                 original_text=original_text,
                 translated_text=translated_text,
+                style_evidence=_format_style_evidence(sanity_result.style_metrics),
             )
 
             # Решаем, к какому судье обращаться
@@ -294,3 +306,17 @@ Return ONLY valid JSON with this shape:
         result["error"] = workflow_error
         result.update(workflow_error_metadata)
     return result
+
+
+def _format_style_evidence(metrics: dict) -> str:
+    """Форматирует детерминированные метрики стиля как улики для судьи."""
+    if not metrics:
+        return "Not available."
+    return (
+        f"- Narrative em-dashes: {metrics.get('narrative_dash_per_1k', 0)} per 1000 words "
+        f"(target <= 3.0).\n"
+        f"- Gerund clauses: {metrics.get('gerund_per_1k', 0)} per 1000 words "
+        f"(target <= 2.5).\n"
+        f"- Filler connectors: {metrics.get('connector_per_1k', 0)} per 1000 words.\n"
+        f"- Similes: {metrics.get('simile_per_1k', 0)} per 1000 words."
+    )
