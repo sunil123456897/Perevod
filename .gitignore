@@ -41,6 +41,8 @@ _test_temp/
 _test_file_io/
 workflow_test_*/
 .pytest_tmp/
+.pytest_tmp_*/
+pytest-of-*/
 temp_input_*/
 .tmp_*/
 path/

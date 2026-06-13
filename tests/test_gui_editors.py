@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import customtkinter as ctk
 
 from Perevod.gui.bible_editor import WorldBibleEditorWindow
@@ -244,3 +244,40 @@ def test_quarantine_editor_delete_term(monkeypatch):
     
     db_manager.delete_from_quarantine.assert_called_once_with(456)
     editor._load_data.assert_called_once()
+
+
+def test_quarantine_sync_removes_chromadb_vectors(monkeypatch):
+    editor = QuarantineEditorWindow.__new__(QuarantineEditorWindow)
+    db_manager = MagicMock()
+    kb_manager = MagicMock()
+    editor.db_manager = db_manager
+    editor.kb_manager = kb_manager
+    editor._load_data = MagicMock()
+
+    db_manager.delete_from_quarantine.return_value = {
+        "english_term": "GhostTerm",
+        "russian_term": "Призрак",
+        "category": "other",
+    }
+    monkeypatch.setattr("tkinter.messagebox.askyesno", lambda title, msg: True)
+    
+    editor._delete_term(456)
+    
+    db_manager.delete_from_quarantine.assert_called_once_with(456)
+    kb_manager.delete_entries.assert_called_once_with(ids=["dict_GhostTerm"])
+    editor._load_data.assert_called_once()
+    
+    db_manager.restore_term.return_value = {
+        "english_term": "RestoredTerm",
+        "russian_term": "Восстановленный",
+        "category": "other",
+    }
+    
+    editor._restore_term(123)
+    
+    db_manager.restore_term.assert_called_once_with(123)
+    kb_manager.add_or_update_entries.assert_called_once_with(
+        documents=["Dictionary Term. Term: RestoredTerm. Translation: Восстановленный."],
+        metadatas=[{"source": "dictionary", "name": "RestoredTerm"}],
+        ids=["dict_RestoredTerm"]
+    )

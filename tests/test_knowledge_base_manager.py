@@ -598,3 +598,26 @@ def test_rebuild_index_with_empty_db_preserves_non_rebuild_entries(kb_manager):
     )
     kb_manager.client.delete_collection.assert_not_called()
     kb_manager.client.create_collection.assert_not_called()
+
+
+def test_dimension_mismatch_recovery(kb_manager):
+    mock_db = MagicMock()
+    mock_db.get_terms_dictionary.return_value = {}
+    mock_db.get_world_bible.return_value = {}
+    
+    kb_manager.db_manager = mock_db
+    
+    old_collection = MagicMock()
+    old_collection.name = "test_project_kb"
+    old_collection.upsert.side_effect = [
+        ValueError("Collection expecting embedding with dimension of 768, got 3072"),
+        None,
+    ]
+    
+    kb_manager.collection = old_collection
+    kb_manager.client.get_or_create_collection.return_value = old_collection
+    
+    kb_manager.add_or_update_entries(["doc"], [{"source": "test"}], ["id"])
+    
+    kb_manager.client.delete_collection.assert_called_once_with(name="test_project_kb")
+    mock_db.get_terms_dictionary.assert_called_once()

@@ -114,6 +114,37 @@ def test_add_and_get_term(db_manager):
     assert "hello" in terms
     assert terms["hello"]["russian_term"] == "привет"
 
+
+def test_conflicting_term_update_creates_visible_proposal(db_manager):
+    db_manager.add_or_update_term("Council", "Совет", "organization")
+
+    result = db_manager.add_or_update_term(
+        "Council",
+        "Совет Старейшин",
+        "organization",
+        allow_overwrite=False,
+        source_chapter="chapter1",
+        confidence=0.65,
+        reason="self-learning synonym",
+    )
+
+    terms = db_manager.get_terms_dictionary()
+    proposals = db_manager.get_dictionary_proposals()
+
+    assert result["status"] == "conflict"
+    assert terms["Council"] == {
+        "russian_term": "Совет",
+        "category": "organization",
+    }
+    assert proposals["Council"] == {
+        "russian_term": "Совет Старейшин",
+        "category": "organization",
+        "confidence": 0.65,
+        "status": "candidate",
+        "source_chapter": "chapter1",
+        "reason": "self-learning synonym",
+    }
+
 def test_add_and_get_bible_entry(db_manager):
     data = {"russian_name": "ПерсонажА", "description": "Описание"}
     db_manager.add_or_update_bible_entry("CharacterA", data)
@@ -186,3 +217,169 @@ def test_quarantine_term_updates_existing_quarantine_entry(db_manager):
     assert quarantined_terms[0]["russian_term"] == "Новый совет"
     assert quarantined_terms[0]["category"] == "other"
     assert quarantined_terms[0]["reason"] == "second duplicate"
+
+
+def test_chapter_run_status_roundtrip(db_manager):
+    db_manager.upsert_chapter_run(
+        "Chapter 1",
+        input_path="input/ch1.txt",
+        output_path="output/ch1.txt",
+        status="discovered",
+    )
+    db_manager.mark_chapter_stage("Chapter 1", "context_retrieved", "done")
+    db_manager.mark_chapter_stage("Chapter 1", "translation_done", "done")
+
+    runs = db_manager.get_chapter_runs()
+
+    assert runs == {
+        "Chapter 1": {
+            "title": "Chapter 1",
+            "input_path": "input/ch1.txt",
+            "output_path": "output/ch1.txt",
+            "status": "translation_done",
+            "stages": {
+                "discovered": "done",
+                "context_retrieved": "done",
+                "translation_done": "done",
+            },
+            "context": None,
+            "judge_result": {},
+            "refine_result": {},
+            "summary_result": {},
+            "error": None,
+        }
+    }
+
+
+def test_chapter_run_error_is_visible(db_manager):
+    db_manager.upsert_chapter_run(
+        "Chapter 2",
+        input_path="input/ch2.txt",
+        output_path="output/ch2.txt",
+        status="discovered",
+    )
+
+    db_manager.mark_chapter_stage(
+        "Chapter 2",
+        "judge_done",
+        "failed",
+        error="invalid judge response",
+    )
+
+    run = db_manager.get_chapter_runs()["Chapter 2"]
+    assert run["status"] == "failed"
+    assert run["stages"]["judge_done"] == "failed"
+    assert run["judge_result"] == {}
+    assert run["refine_result"] == {}
+    assert run["summary_result"] == {}
+    assert run["error"] == "invalid judge response"
+
+
+def test_chapter_run_context_roundtrip(db_manager):
+    db_manager.upsert_chapter_run(
+        "Chapter 3",
+        input_path="input/ch3.txt",
+        output_path="output/ch3.txt",
+        status="discovered",
+    )
+
+    db_manager.update_chapter_context(
+        "Chapter 3",
+        "=== WORLD BIBLE & LORE ===\n- Spirit Lotus lore",
+    )
+
+    run = db_manager.get_chapter_runs()["Chapter 3"]
+    assert run["context"] == "=== WORLD BIBLE & LORE ===\n- Spirit Lotus lore"
+    assert run["judge_result"] == {}
+    assert run["refine_result"] == {}
+    assert run["summary_result"] == {}
+
+
+def test_chapter_run_judge_result_roundtrip(db_manager):
+    db_manager.upsert_chapter_run(
+        "Chapter 4",
+        input_path="input/ch4.txt",
+        output_path="output/ch4.txt",
+        status="discovered",
+    )
+
+    db_manager.update_chapter_judge_result(
+        "Chapter 4",
+        {
+            "pass_check": False,
+            "severity": "high",
+            "score": 4,
+            "blocking_issues": ["Missing canonical term"],
+        },
+    )
+
+    run = db_manager.get_chapter_runs()["Chapter 4"]
+    assert run["judge_result"]["pass_check"] is False
+    assert run["judge_result"]["severity"] == "high"
+    assert run["judge_result"]["score"] == 4
+    assert run["judge_result"]["blocking_issues"] == ["Missing canonical term"]
+
+
+def test_chapter_run_refine_result_roundtrip(db_manager):
+    db_manager.upsert_chapter_run(
+        "Chapter 5",
+        input_path="input/ch5.txt",
+        output_path="output/ch5.txt",
+        status="discovered",
+    )
+
+    db_manager.update_chapter_refine_result(
+        "Chapter 5",
+        {
+            "refined": True,
+            "refinement_count": 1,
+            "issues_fixed": ["Missing canonical term"],
+        },
+    )
+
+    run = db_manager.get_chapter_runs()["Chapter 5"]
+    assert run["refine_result"]["refined"] is True
+    assert run["refine_result"]["refinement_count"] == 1
+    assert run["refine_result"]["issues_fixed"] == ["Missing canonical term"]
+
+
+def test_chapter_run_summary_result_roundtrip(db_manager):
+    db_manager.upsert_chapter_run(
+        "Chapter 6",
+        input_path="input/ch6.txt",
+        output_path="output/ch6.txt",
+        status="discovered",
+    )
+
+    db_manager.update_chapter_summary_result(
+        "Chapter 6",
+        {
+            "title": "Chapter 6",
+            "summary": "A summary.",
+            "key_events": ["Event"],
+            "active_characters": ["Hero"],
+            "chapter_index": 6,
+        },
+    )
+
+    run = db_manager.get_chapter_runs()["Chapter 6"]
+    assert run["summary_result"]["title"] == "Chapter 6"
+    assert run["summary_result"]["summary"] == "A summary."
+    assert run["summary_result"]["key_events"] == ["Event"]
+    assert run["summary_result"]["active_characters"] == ["Hero"]
+    assert run["summary_result"]["chapter_index"] == 6
+
+
+def test_accept_all_proposals_no_crash(db_manager):
+    proposal_data = {
+        "english_name": "Lotus",
+        "russian_name": "Лотос",
+        "category": "item",
+        "description": "A magical plant",
+        "russian_description": "Магическое растение"
+    }
+    db_manager.add_or_update_bible_entry("Lotus", proposal_data)
+    
+    bible = db_manager.get_world_bible()
+    assert "Lotus" in bible
+    assert bible["Lotus"]["russian_name"] == "Лотос"

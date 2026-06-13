@@ -59,7 +59,9 @@ def test_should_refine_logic():
 @patch("Perevod.graph_runner.translation_node")
 @patch("Perevod.graph_runner.judge_node")
 @patch("Perevod.graph_runner.refine_node")
+@patch("Perevod.graph_runner.summarization_node")
 def test_full_workflow_execution_v3(
+    mock_summarization,
     mock_refine,
     mock_judge,
     mock_translate,
@@ -89,6 +91,10 @@ def test_full_workflow_execution_v3(
         {"blocking_issues": [], "judge_results": [{"pass_check": True}]}
     ]
     mock_refine.side_effect = lambda s: {"refinement_count": s.get("refinement_count", 0) + 1}
+    mock_summarization.side_effect = lambda s: {
+        "chapter_summaries": [{"title": "chapter1"}],
+        "summary_errors": [],
+    }
     
     project_settings = {
         "input_dir": "input",

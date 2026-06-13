@@ -8,6 +8,9 @@ jobs:
   test:
     name: Python ${{ matrix.python-version }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    env:
+      GOOGLE_API_KEY: test_api_key
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
 
     strategy:
       fail-fast: false
@@ -33,6 +36,9 @@ jobs:
       - name: Lint
         run: python -m ruff check src scripts tests --exclude venv --exclude build --exclude dist
 
+      - name: Compile Python
+        run: python -m compileall -q src scripts
+
       - name: Repo cleanliness
         run: python scripts/check_repo_cleanliness.py
 
@@ -42,7 +48,7 @@ jobs:
       - name: Coverage smoke
         if: matrix.os == 'windows-latest' && matrix.python-version == '3.12'
         run: |
-          python -m coverage run scripts/run_coverage.py
+          python scripts/run_coverage.py
           python -m coverage report -m
           python -m coverage xml
 

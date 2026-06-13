@@ -2,9 +2,7 @@
 import logging
 import json
 import re
-import os
 
-from Perevod.utils.caching import generate_translation_cache_key
 from Perevod.agents.state import AgentState
 from Perevod.utils.text_planning import estimate_token_count, split_text_by_token_budget
 from Perevod.utils.translation_quality import evaluate_translation_sanity
@@ -229,7 +227,7 @@ def translation_node(state: AgentState) -> dict:
     # 2. Готовим шаблон промпта для перевода главы
     style_guide = (state.get("project_settings", {}).get("style_guide") or "").strip()
     style_section = (
-        f"PROJECT STYLE GUIDE:\n\n{style_guide}\n\n"
+        f"PROJECT STYLE GUIDE:\n<style_guide>\n{style_guide}\n</style_guide>\n"
         if style_guide
         else ""
     )
@@ -238,33 +236,30 @@ def translation_node(state: AgentState) -> dict:
     }
     chunk_token_budget = _translation_chunk_budget(state, context)
     translation_prompt_template = """Translate the following chapter of a fantasy novel from English to Russian.
-INSTRUCTIONS:
 
-Strictly Adhere to the Dictionary: You MUST use the translations provided in the Canonical Dictionary for all listed terms. If a term has multiple alternative translations separated by a slash (/) or semicolon (;), you MUST choose the most natural, premium literary Russian variant (Senior Editor style) suited for the context. This is the highest priority.
+CRITICAL INSTRUCTIONS:
+1. Strictly Adhere to the Dictionary: You MUST use the translations provided in the <canonical_dictionary> for all listed terms. If a term has multiple alternative translations separated by a slash (/) or semicolon (;), you MUST choose the most natural, premium literary Russian variant suited for the context. This is the highest priority.
+2. Use Knowledge Base: Use the information in <relevant_context> to maintain consistency with characters, locations, and lore.
+3. Literary Quality: The translation must be literary, natural-sounding, and elegant (Senior Editor style), not a literal word-for-word machine translation. Preserve the original tone, pacing, and style.
+4. Avoid AI-slop: NEVER use the following phrases: "стоит отметить", "важно понимать", "следует отметить", "неудивительно, что", "в заключение".
+5. Completeness: Translate every sentence, paragraph, dialogue line, number, name, and detail. Do not summarize, omit, merge, or explain the chapter.
+6. Formatting: Preserve paragraph breaks and original formatting.
 
-Use Knowledge Base: Use the "Relevant Context" from the knowledge base to maintain consistency with characters, locations, and lore.
-
-Literary Quality: The translation must be literary, natural-sounding, and elegant (Senior Editor style), not a literal word-for-word machine translation. Preserve the original tone, pacing, and style.
-CRITICAL STYLE RULE: Avoid generic AI-style phrasing ("ИИ-измы"). NEVER use the following phrases: "стоит отметить", "важно понимать", "следует отметить", "неудивительно, что", "в заключение".
-
-Completeness: Translate every sentence, paragraph, dialogue line, number, name, and detail. Do not summarize, omit, merge, or explain the chapter.
-
-Formatting: Preserve paragraph breaks and original formatting.
-
-CANONICAL DICTIONARY (MUST USE):
-
+<canonical_dictionary>
 {dictionary}
+</canonical_dictionary>
 
-RELEVANT CONTEXT FROM KNOWLEDGE BASE:
-
+<relevant_context>
 {context}
+</relevant_context>
 
 {style_section}
 {chunk_notice}
-ENGLISH CHAPTER TO TRANSLATE:
+<english_chapter_to_translate>
 {chapter_text}
-FULL RUSSIAN TRANSLATION OF THE CHAPTER:
+</english_chapter_to_translate>
 
+FULL RUSSIAN TRANSLATION OF THE CHAPTER (Output ONLY the translated text, no explanations, no tags):
 """
     processed_chapters = []
     progress_callback = state.get("progress_callback")
@@ -314,13 +309,46 @@ FULL RUSSIAN TRANSLATION OF THE CHAPTER:
                 ensure_ascii=False,
                 indent=2,
             )
+            if "chapter_contexts" in state:
+                chapter_context = state.get("chapter_contexts", {}).get(title) or ""
+            else:
+                chapter_context = rag_context
+            raw_temp = state.get("project_settings", {}).get(
+                "temperature",
+                getattr(context["settings"], "temperature", 0.7),
+            )
+            if hasattr(raw_temp, "_mock_return_value") or not isinstance(raw_temp, int | float | str):
+                temperature = 0.7
+            else:
+                try:
+                    temperature = float(raw_temp)
+                except (TypeError, ValueError):
+                    temperature = 0.7
+
+            raw_top_p = state.get("project_settings", {}).get(
+                "top_p",
+                getattr(context["settings"], "top_p", 0.9),
+            )
+            if hasattr(raw_top_p, "_mock_return_value") or not isinstance(raw_top_p, int | float | str):
+                top_p = 0.9
+            else:
+                try:
+                    top_p = float(raw_top_p)
+                except (TypeError, ValueError):
+                    top_p = 0.9
+
+            generation_settings = {
+                "temperature": temperature,
+                "top_p": top_p,
+            }
             model_name = context['llm_provider'].model_configs.get('translation', '')
             chapter_cache_key = nodes.generate_translation_cache_key(
                 {
                     "original_chunk": eng_text,
                     "dictionary": chapter_dictionary,
-                    "relevant_context": rag_context,
+                    "relevant_context": chapter_context,
                     "style_guide": style_guide,
+                    "generation_settings": generation_settings,
                 },
                 model_name,
             )
@@ -353,7 +381,7 @@ FULL RUSSIAN TRANSLATION OF THE CHAPTER:
                 translation_chunks = nodes._plan_translation_chunks(
                     translation_prompt_template,
                     dictionary=dictionary_text,
-                    context=rag_context,
+                    context=chapter_context,
                     style_section=style_section,
                     chapter_text=eng_text,
                     token_budget=chunk_token_budget,
@@ -381,7 +409,7 @@ FULL RUSSIAN TRANSLATION OF THE CHAPTER:
                     prompt = _build_translation_prompt(
                         translation_prompt_template,
                         dictionary=dictionary_text,
-                        context=rag_context,
+                        context=chapter_context,
                         style_section=style_section,
                         chunk_notice=chunk_notice,
                         chapter_text=chunk_text,
@@ -448,14 +476,23 @@ FULL RUSSIAN TRANSLATION OF THE CHAPTER:
                         "; ".join(sanity_result.blocking_issues),
                     )
 
+            backup_path = None
             if not reused_existing_translation:
+                if chapter_data.get("backup_existing_output"):
+                    backup_path = nodes.tool_backup_file(chapter_data['output_path'])
                 nodes.tool_write_chapter(chapter_data['output_path'], translated_text)
                 logger.info(f"Глава '{title}' успешно переведена и записана in {chapter_data['output_path']}")
+
+            from Perevod.agents.checkpoints import mark_chapter_stage
+            mark_chapter_stage(db_manager, title, "translation_done", "done")
+            mark_chapter_stage(db_manager, title, "output_written", "done")
+
             processed_chapters.append(
                 {
                     **chapter_data,
                     "cache_key": chapter_cache_key,
-                    "relevant_context": rag_context,
+                    "relevant_context": chapter_context,
+                    "output_backup_path": backup_path,
                     "reused_existing_translation": reused_existing_translation,
                     "translation_source": translation_source,
                     "translation_mode": translation_mode,

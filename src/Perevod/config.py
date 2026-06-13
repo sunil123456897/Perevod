@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     curation_model_name: str = DEFAULT_TASK_MODELS["curation"]
     translation_model_name: str = DEFAULT_TASK_MODELS["translation"]
     qa_model_name: str = DEFAULT_TASK_MODELS["qa"]
+    judge_model_name: str = DEFAULT_TASK_MODELS["qa"]
+    expert_judge_model_name: str = "gemini-3.5-flash"
+    editor_model_name: str = "gemini-3.5-flash"
     summarization_model_name: str = DEFAULT_TASK_MODELS["summarization"]
 
     # Модель для создания эмбеддингов

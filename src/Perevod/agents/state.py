@@ -41,9 +41,12 @@ class AgentState(TypedDict):
 
     # --- Sprint 2: Rolling Memory & RAG ---
     rag_context: str
+    chapter_contexts: Dict[str, str]
     context_errors: List[Dict[str, str]]
+    context_warnings: List[Dict[str, str]]
     chapter_summaries: List[Dict[str, Any]]
     summary_errors: List[Dict[str, str]]
+    chapter_runs: Dict[str, Dict[str, Any]]
 
     # --- Служебные поля ---
     error: str | None

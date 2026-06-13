@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
 
 from Perevod.utils import llm
 from Perevod.utils.llm import generate_text, safe_json_loads, tool_translate_chunk
@@ -90,7 +90,7 @@ def test_generate_text_retries_transient_errors_without_sleeping_for_tests():
     response = MagicMock(text="ok")
     model = MagicMock()
     model.generate_content.side_effect = [
-        google_exceptions.ServiceUnavailable("temporary"),
+        genai_errors.ServerError(503, {"message": "temporary"}),
         response,
     ]
     sleep = MagicMock()
@@ -125,9 +125,9 @@ def test_generate_text_passes_timeout_request_option():
 
 def test_generate_text_raises_after_retry_budget_is_exhausted():
     model = MagicMock()
-    model.generate_content.side_effect = google_exceptions.ServiceUnavailable("down")
+    model.generate_content.side_effect = genai_errors.ServerError(503, {"message": "down"})
 
-    with pytest.raises(google_exceptions.ServiceUnavailable):
+    with pytest.raises(genai_errors.ServerError):
         generate_text(
             model,
             "prompt",
@@ -142,10 +142,10 @@ def test_generate_text_raises_after_retry_budget_is_exhausted():
 
 def test_generate_text_does_not_retry_quota_errors():
     model = MagicMock()
-    model.generate_content.side_effect = google_exceptions.ResourceExhausted("quota")
+    model.generate_content.side_effect = genai_errors.ClientError(429, {"message": "quota"})
     sleep = MagicMock()
 
-    with pytest.raises(google_exceptions.ResourceExhausted):
+    with pytest.raises(genai_errors.ClientError):
         generate_text(
             model,
             "prompt",

@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
 
 from Perevod.api_usage import ApiUsageTracker
 from Perevod import doctor
@@ -130,6 +130,43 @@ def test_check_model_profile_shows_normalized_free_tier_models():
     assert "translation=gemini-3-flash-preview" in result.message
     assert "analysis=gemini-3.1-flash-lite-preview" in result.message
     assert "embedding=gemini-embedding-2" in result.message
+
+
+def test_check_model_profile_warns_for_untracked_models_without_live_api_call(monkeypatch):
+    provider_factory = MagicMock(side_effect=AssertionError("doctor profile is offline"))
+    monkeypatch.setattr(doctor, "LLMProvider", provider_factory)
+
+    result = doctor._check_model_profile(
+        {
+            "translation_model_name": "gemini-custom-exp",
+            "embedding_model_name": "custom-embedding",
+            "gemini_free_tier_mode": False,
+        }
+    )
+
+    assert result.status == doctor.STATUS_WARN
+    assert "untracked models=custom-embedding, gemini-custom-exp" in result.message
+    provider_factory.assert_not_called()
+
+
+def test_check_model_profile_warns_for_incompatible_model_categories():
+    result = doctor._check_model_profile(
+        {
+            "translation_model_name": "gemini-embedding-2",
+            "embedding_model_name": "gemini-3-flash-preview",
+            "gemini_free_tier_mode": False,
+        }
+    )
+
+    assert result.status == doctor.STATUS_WARN
+    assert (
+        "translation=gemini-embedding-2 (embedding, expected text)"
+        in result.message
+    )
+    assert (
+        "embedding=gemini-3-flash-preview (text, expected embedding)"
+        in result.message
+    )
 
 
 def test_run_doctor_does_not_fail_when_api_check_is_disabled(monkeypatch):
@@ -381,7 +418,7 @@ def test_check_api_connectivity_reports_windows_connection_timeout(monkeypatch):
 
 def test_check_api_connectivity_reports_permission_issue(monkeypatch):
     provider = MagicMock()
-    provider.get_model.side_effect = google_exceptions.PermissionDenied("denied")
+    provider.get_model.side_effect = genai_errors.ClientError(403, {"message": "denied"})
     monkeypatch.setattr(doctor, "LLMProvider", MagicMock(return_value=provider))
 
     result = doctor._check_api_connectivity(True, "key", "gemini-test", 20)
@@ -392,7 +429,7 @@ def test_check_api_connectivity_reports_permission_issue(monkeypatch):
 
 def test_check_api_connectivity_reports_quota_issue(monkeypatch):
     provider = MagicMock()
-    provider.get_model.side_effect = google_exceptions.ResourceExhausted("quota")
+    provider.get_model.side_effect = genai_errors.ClientError(429, {"message": "quota"})
     monkeypatch.setattr(doctor, "LLMProvider", MagicMock(return_value=provider))
 
     result = doctor._check_api_connectivity(True, "key", "gemini-test", 20)

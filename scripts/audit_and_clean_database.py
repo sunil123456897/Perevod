@@ -436,6 +436,19 @@ def main():
     try:
         auditor = DatabaseAuditor(project_to_audit, dry_run=args.dry_run)
         auditor.run_audit(prune_only=args.prune_only)
+        if not args.dry_run:
+            logger.info("Синхронизация ChromaDB после аудита (rebuild index)...")
+            from Perevod.knowledge_base.knowledge_base_manager import KnowledgeBaseManager
+            api_key = auditor.settings.get("GOOGLE_API_KEY") or auditor.settings.get("api_key") or ""
+            embedding_model = auditor.settings.get("embedding_model_name") or ""
+            kb_manager = KnowledgeBaseManager(
+                project_name=project_to_audit,
+                api_key=api_key,
+                embedding_model_name=embedding_model,
+                db_manager=auditor.db,
+            )
+            kb_manager.rebuild_index_from_db(auditor.db)
+            logger.info("Синхронизация ChromaDB успешно завершена.")
     except Exception as e:
         logger.error(f"Критическая ошибка во время аудита: {e}", exc_info=True)
 

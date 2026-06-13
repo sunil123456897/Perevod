@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import json
 from Perevod.agents.nodes import summarization_node
 from Perevod.agents.state import AgentState
+from Perevod.utils.api_errors import ApiErrorInfo, GeminiAPIError
 
 @pytest.fixture
 def mock_state():
@@ -80,7 +81,27 @@ def test_summarization_node_success(mock_read, mock_state):
     assert metadatas[0]["chapter_index"] == 6  # 5 + 1
     assert metadatas[0]["title"] == "The Beginning"
     assert ids[0] == "memory_test_project_The Beginning"
-    assert kwargs["embeddings"] == [[0.0] * 3072]
+    assert "embeddings" not in kwargs
+    mock_state["app_context"]["db_manager"].mark_chapter_stage.assert_any_call(
+        "The Beginning",
+        "summary_done",
+        "done",
+    )
+    mock_state["app_context"]["db_manager"].mark_chapter_stage.assert_any_call(
+        "The Beginning",
+        "memory_updated",
+        "done",
+    )
+    mock_state["app_context"]["db_manager"].update_chapter_summary_result.assert_called_once_with(
+        "The Beginning",
+        {
+            "title": "Chapter 1",
+            "summary": "A great summary of chapter 1.",
+            "key_events": ["Event 1", "Event 2"],
+            "active_characters": ["Hero", "Villain"],
+            "chapter_index": 6,
+        },
+    )
 
 
 @patch("Perevod.agents.nodes.tool_read_chapter")
@@ -163,6 +184,45 @@ def test_summarization_node_preserves_existing_workflow_error(mock_state):
 
 
 @patch("Perevod.agents.nodes.tool_read_chapter")
+def test_summarization_node_skips_chapter_with_done_checkpoint(mock_read, mock_state):
+    mock_model = MagicMock()
+    mock_state["app_context"]["llm_provider"].get_model.return_value = mock_model
+    mock_state["chapter_runs"] = {
+        "The Beginning": {
+            "stages": {
+                "summary_done": "done",
+                "memory_updated": "done",
+            },
+            "summary_result": {
+                "title": "The Beginning",
+                "summary": "Checkpoint summary.",
+                "key_events": ["Event"],
+                "active_characters": ["Hero"],
+                "chapter_index": 1,
+            },
+        }
+    }
+
+    result = summarization_node(mock_state)
+
+    assert result == {
+        "chapter_summaries": [
+            {
+                "title": "The Beginning",
+                "summary": "Checkpoint summary.",
+                "key_events": ["Event"],
+                "active_characters": ["Hero"],
+                "chapter_index": 1,
+                "checkpoint_reused": True,
+            }
+        ],
+        "summary_errors": [],
+    }
+    mock_read.assert_not_called()
+    mock_model.generate_content.assert_not_called()
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter")
 def test_summarization_node_reports_empty_translation_as_warning(mock_read, mock_state):
     mock_read.return_value = "   "
     mock_model = MagicMock()
@@ -180,8 +240,51 @@ def test_summarization_node_reports_empty_translation_as_warning(mock_read, mock
             "error": "Translated output is empty; chapter memory was not updated.",
         }
     ]
+    mock_state["app_context"]["db_manager"].mark_chapter_stage.assert_called_with(
+        "The Beginning",
+        "summary_done",
+        "failed",
+        error="Translated output is empty; chapter memory was not updated.",
+    )
     mock_model.generate_content.assert_not_called()
     mock_state["app_context"]["kb_manager"].add_or_update_entries.assert_not_called()
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter")
+def test_summarization_node_fails_without_kb_manager_before_api_call(
+    mock_read, mock_state
+):
+    mock_model = MagicMock()
+    mock_state["app_context"]["llm_provider"].get_model.return_value = mock_model
+    mock_state["app_context"]["kb_manager"] = None
+
+    result = summarization_node(mock_state)
+
+    expected_error = (
+        "Knowledge base manager is unavailable; chapter memory was not updated."
+    )
+    assert result["chapter_summaries"] == []
+    assert result["summary_errors"] == [
+        {
+            "title": "The Beginning",
+            "error": expected_error,
+        }
+    ]
+    mock_state["app_context"]["db_manager"].mark_chapter_stage.assert_any_call(
+        "The Beginning",
+        "summary_done",
+        "failed",
+        error=expected_error,
+    )
+    mock_state["app_context"]["db_manager"].mark_chapter_stage.assert_any_call(
+        "The Beginning",
+        "memory_updated",
+        "failed",
+        error=expected_error,
+    )
+    mock_read.assert_not_called()
+    mock_state["app_context"]["llm_provider"].get_model.assert_not_called()
+    mock_model.generate_content.assert_not_called()
 
 
 @patch("Perevod.agents.nodes.tool_read_chapter")
@@ -229,3 +332,35 @@ def test_summarization_node_reports_non_fatal_summary_errors(mock_read, mock_sta
 
     assert result["chapter_summaries"] == []
     assert result["summary_errors"][0]["title"] == "The Beginning"
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter")
+def test_summarization_node_preserves_gemini_error_metadata(mock_read, mock_state):
+    mock_read.return_value = "Translated text"
+    mock_model = MagicMock()
+    mock_state["app_context"]["llm_provider"].get_model.return_value = mock_model
+    mock_model.generate_content.side_effect = GeminiAPIError(
+        model_name="gemini-3-flash-preview",
+        operation="generateContent",
+        info=ApiErrorInfo(
+            category="quota",
+            retryable=False,
+            status_code=429,
+            message="quota exhausted",
+        ),
+        original_error=RuntimeError("quota exhausted"),
+    )
+    mock_state["app_context"]["kb_manager"].collection.get.return_value = {
+        "metadatas": []
+    }
+
+    result = summarization_node(mock_state)
+
+    assert result["chapter_summaries"] == []
+    summary_error = result["summary_errors"][0]
+    assert summary_error["title"] == "The Beginning"
+    assert summary_error["error_category"] == "quota"
+    assert summary_error["error_retryable"] is False
+    assert summary_error["error_status_code"] == 429
+    assert summary_error["error_operation"] == "generateContent"
+    assert summary_error["error_model"] == "gemini-3-flash-preview"

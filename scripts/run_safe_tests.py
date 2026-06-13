@@ -14,6 +14,7 @@ DEFAULT_TESTS = [
     "tests/test_cli.py",
     "tests/test_doctor.py",
     "tests/test_api_errors.py",
+    "tests/test_checkpoints.py",
     "tests/test_import_boundaries.py",
     "tests/test_graph_runner.py",
     "tests/test_03_graph_nodes.py",

@@ -4,6 +4,7 @@ import time
 
 from Perevod.graph_runner import run_translation_workflow
 from Perevod.project_manager import ProjectManager
+from pathlib import Path
 
 logger = logging.getLogger("NovelTranslator.CLI")
 
@@ -20,6 +21,7 @@ def run_cli_translation(project_name, overrides=None):
     """Запускает перевод проекта без GUI и возвращает process-style exit code."""
     logger.info(f"--- Режим командной строки: Перевод проекта '{project_name}' ---")
 
+    project_settings = {}
     try:
         start_time_cli = time.monotonic()
         project_settings = ProjectManager().get_project_settings(project_name)
@@ -30,6 +32,8 @@ def run_cli_translation(project_name, overrides=None):
             project_settings,
             progress_callback=_progress_to_log,
         )
+        if final_state.get("report_path"):
+            logger.info("Отчет перевода: %s", final_state["report_path"])
 
         if final_state.get("error"):
             raise Exception(final_state["error"])
@@ -39,11 +43,13 @@ def run_cli_translation(project_name, overrides=None):
         logger.info(
             f"--- Перевод завершен успешно за {duration_cli:.2f} секунд ({processed_count} глав) ---"
         )
-        if final_state.get("report_path"):
-            logger.info("Отчет перевода: %s", final_state["report_path"])
         return 0
 
     except Exception as e:
+        output_dir = project_settings.get("output_dir") if project_settings else None
+        if output_dir:
+            report_path = str(Path(output_dir) / "translation_report.json")
+            logger.info("Отчет перевода: %s", report_path)
         logger.critical(f"Критическая ошибка во время перевода: {e}", exc_info=True)
         return 1
 

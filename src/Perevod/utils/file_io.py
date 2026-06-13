@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import tempfile
 
 logger = logging.getLogger("NovelTranslator.FileIO")
@@ -55,4 +56,26 @@ def tool_write_chapter(path: str, content: str):
             raise
     except Exception as e:
         logger.error(f"Ошибка записи в файл {path}: {e}", exc_info=True)
+        raise
+
+
+def tool_backup_file(path: str) -> str | None:
+    """Creates a sibling backup for an existing file before overwrite."""
+    path = _normalize_win_path(path)
+    if not os.path.exists(path):
+        return None
+
+    abs_path = os.path.abspath(path)
+    backup_path = f"{abs_path}.bak"
+    suffix = 1
+    while os.path.exists(_normalize_win_path(backup_path)):
+        backup_path = f"{abs_path}.bak.{suffix}"
+        suffix += 1
+
+    try:
+        normalized_backup_path = _normalize_win_path(backup_path)
+        shutil.copy2(path, normalized_backup_path)
+        return backup_path
+    except Exception as e:
+        logger.error(f"Ошибка создания backup для файла {path}: {e}", exc_info=True)
         raise

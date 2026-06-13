@@ -66,6 +66,61 @@ def test_run_cli_translation_returns_error_code_when_workflow_fails(monkeypatch)
     assert cli.run_cli_translation("Book") == 1
 
 
+def test_run_cli_translation_logs_report_path_when_workflow_returns_error(monkeypatch):
+    project_manager = MagicMock()
+    project_manager.get_project_settings.return_value = {
+        "input_dir": "in",
+        "output_dir": "out",
+        "GOOGLE_API_KEY": "test-key",
+    }
+    monkeypatch.setattr(cli, "ProjectManager", lambda: project_manager)
+    monkeypatch.setattr(
+        cli,
+        "run_translation_workflow",
+        MagicMock(
+            return_value={
+                "processed_chapters": [{"title": "chapter1"}],
+                "error": "Summary failed for chapter 'chapter1'",
+                "report_path": "out/translation_report.json",
+            }
+        ),
+    )
+    info = MagicMock()
+    monkeypatch.setattr(cli.logger, "info", info)
+
+    assert cli.run_cli_translation("Book") == 1
+    assert any("translation_report.json" in str(call.args) for call in info.call_args_list)
+
+
+def test_run_cli_translation_logs_existing_report_path_when_workflow_raises(
+    monkeypatch, tmp_path
+):
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    report_path = output_dir / "translation_report.json"
+    report_path.write_text("{}", encoding="utf-8")
+    project_manager = MagicMock()
+    project_manager.get_project_settings.return_value = {
+        "input_dir": "in",
+        "output_dir": str(output_dir),
+        "GOOGLE_API_KEY": "test-key",
+    }
+    monkeypatch.setattr(cli, "ProjectManager", lambda: project_manager)
+    monkeypatch.setattr(
+        cli,
+        "run_translation_workflow",
+        MagicMock(side_effect=RuntimeError("Summary failed")),
+    )
+    info = MagicMock()
+    monkeypatch.setattr(cli.logger, "info", info)
+
+    assert cli.run_cli_translation("Book") == 1
+    assert any(
+        len(call.args) > 1 and call.args[1] == str(report_path)
+        for call in info.call_args_list
+    )
+
+
 def test_main_cli_mode_uses_cli_runner(monkeypatch):
     called = {}
 

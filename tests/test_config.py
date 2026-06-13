@@ -22,10 +22,13 @@ def test_default_models_use_free_tier_friendly_flash_family():
 
     assert settings.analysis_model_name == "gemini-3.1-flash-lite-preview"
     assert settings.curation_model_name == "gemini-3.1-flash-lite-preview"
-    assert settings.translation_model_name == "gemini-3-flash-preview"
+    assert settings.translation_model_name == "gemma-4-31b-it"
     assert settings.qa_model_name == "gemini-3.1-flash-lite-preview"
     assert settings.summarization_model_name == "gemini-3.1-flash-lite-preview"
     assert settings.embedding_model_name == "gemini-embedding-2"
+    assert settings.judge_model_name == "gemini-3.1-flash-lite-preview"
+    assert settings.expert_judge_model_name == "gemini-3.5-flash"
+    assert settings.editor_model_name == "gemini-3.5-flash"
 
 
 def test_apply_proxy_environment_sets_missing_process_proxy(monkeypatch):

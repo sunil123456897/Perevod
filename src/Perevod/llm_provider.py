@@ -6,9 +6,17 @@ from typing import Dict
 from google import genai
 from google.genai import types
 
-from Perevod.api_usage import ApiUsageTracker, should_track_api_usage
+from Perevod.api_usage import (
+    ApiUsageLimitExceeded,
+    ApiUsageTracker,
+    should_track_api_usage,
+)
 from Perevod.model_registry import model_min_interval_seconds
-from Perevod.utils.api_errors import is_retryable_api_error
+from Perevod.utils.api_errors import (
+    GeminiAPIError,
+    classify_api_error,
+    is_retryable_api_error,
+)
 
 logger = logging.getLogger("NovelTranslator.LLMProvider")
 
@@ -17,6 +25,15 @@ def _timeout_seconds_to_milliseconds(timeout_seconds: int | float | None) -> int
     if timeout_seconds is None:
         return None
     return int(timeout_seconds * 1000)
+
+
+def _gateway_error(model_name: str, operation: str, error: Exception) -> GeminiAPIError:
+    return GeminiAPIError(
+        model_name=model_name,
+        operation=operation,
+        info=classify_api_error(error),
+        original_error=error,
+    )
 
 
 class GeminiModelAdapter:
@@ -116,12 +133,16 @@ class GeminiModelAdapter:
                     config=config,
                 )
                 if self.usage_tracker:
-                    self.usage_tracker.record_call(
-                        self.model_name,
-                        "generateContent",
-                        reservation_id=reservation_id,
-                    )
+                    temp_res_id = reservation_id
                     reservation_id = None
+                    try:
+                        self.usage_tracker.record_call(
+                            self.model_name,
+                            "generateContent",
+                            reservation_id=temp_res_id,
+                        )
+                    except Exception as tracker_err:
+                        logger.warning("Failed to record api usage in generate_content: %s", tracker_err)
                 return response
             except Exception as error:
                 if self.usage_tracker and reservation_id is not None:
@@ -130,8 +151,14 @@ class GeminiModelAdapter:
                         "generateContent",
                         reservation_id=reservation_id,
                     )
-                if not is_retryable_api_error(error) or attempt >= max_retries:
+                if isinstance(error, ApiUsageLimitExceeded):
                     raise
+                if not is_retryable_api_error(error) or attempt >= max_retries:
+                    raise _gateway_error(
+                        self.model_name,
+                        "generateContent",
+                        error,
+                    ) from error
 
                 delay = initial_delay * (2 ** (attempt - 1))
                 logger.warning(
@@ -146,6 +173,98 @@ class GeminiModelAdapter:
                 sleep_func(delay)
 
         raise RuntimeError("Gemini API retry loop exited unexpectedly.")
+
+
+class GeminiEmbeddingAdapter:
+    """Gateway wrapper for Gemini embedContent calls."""
+
+    def __init__(
+        self,
+        client: genai.Client,
+        model_name: str,
+        usage_tracker: ApiUsageTracker | None = None,
+        default_request_timeout_seconds: int = 300,
+    ):
+        self.client = client
+        self.model_name = model_name
+        self.usage_tracker = usage_tracker
+        self.default_request_timeout_seconds = default_request_timeout_seconds
+
+    def embed_content(
+        self,
+        texts: list[str],
+        task_type: str,
+        output_dimensionality: int = 3072,
+        request_options: dict | None = None,
+        max_retries: int = 4,
+        initial_delay: float = 10,
+        sleep_func=time.sleep,
+    ):
+        request_options = request_options or {}
+        timeout_seconds = request_options.get("timeout")
+        if timeout_seconds is None:
+            timeout_seconds = self.default_request_timeout_seconds
+        config = types.EmbedContentConfig(
+            taskType=task_type,
+            outputDimensionality=output_dimensionality,
+            httpOptions=types.HttpOptions(
+                timeout=_timeout_seconds_to_milliseconds(timeout_seconds)
+            ),
+        )
+        for attempt in range(1, max_retries + 1):
+            reservation_id = None
+            try:
+                if self.usage_tracker:
+                    reservation_id = self.usage_tracker.reserve_call(
+                        self.model_name,
+                        "embedContent",
+                    )
+                response = self.client.models.embed_content(
+                    model=self.model_name,
+                    contents=texts,
+                    config=config,
+                )
+                if self.usage_tracker:
+                    temp_res_id = reservation_id
+                    reservation_id = None
+                    try:
+                        self.usage_tracker.record_call(
+                            self.model_name,
+                            "embedContent",
+                            reservation_id=temp_res_id,
+                        )
+                    except Exception as tracker_err:
+                        logger.warning("Failed to record api usage in embed_content: %s", tracker_err)
+                return response
+            except Exception as error:
+                if self.usage_tracker and reservation_id is not None:
+                    self.usage_tracker.release_call(
+                        self.model_name,
+                        "embedContent",
+                        reservation_id=reservation_id,
+                    )
+                if isinstance(error, ApiUsageLimitExceeded):
+                    raise
+                if not is_retryable_api_error(error) or attempt >= max_retries:
+                    raise _gateway_error(
+                        self.model_name,
+                        "embedContent",
+                        error,
+                    ) from error
+
+                delay = initial_delay * (2 ** (attempt - 1))
+                logger.warning(
+                    "Временная ошибка Gemini Embedding API для модели '%s': %s. "
+                    "Повторная попытка %s/%s через %.2f секунд.",
+                    self.model_name,
+                    error,
+                    attempt,
+                    max_retries,
+                    delay,
+                )
+                sleep_func(delay)
+
+        raise RuntimeError("Gemini Embedding API retry loop exited unexpectedly.")
 
 
 class LLMProvider:

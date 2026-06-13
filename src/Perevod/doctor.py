@@ -6,7 +6,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
-from google.api_core import exceptions as google_exceptions
+from google.genai import errors as genai_errors
 
 from Perevod.api_usage import (
     ApiUsageTracker,
@@ -173,10 +173,11 @@ def _project_model_profile(project_settings: dict) -> tuple[dict[str, str], str,
                 settings.translation_model_name,
             ),
             "qa": project_settings.get("qa_model_name", settings.qa_model_name),
-            "judge": project_settings.get("judge_model_name", settings.qa_model_name),
+            "judge": project_settings.get("judge_model_name", settings.judge_model_name),
+            "expert_judge": project_settings.get("expert_judge_model_name", settings.expert_judge_model_name),
             "editor": project_settings.get(
                 "editor_model_name",
-                settings.translation_model_name,
+                settings.editor_model_name,
             ),
             "summarization": project_settings.get(
                 "summarization_model_name",
@@ -193,6 +194,7 @@ def _project_model_profile(project_settings: dict) -> tuple[dict[str, str], str,
 
 
 def _check_model_profile(project_settings: dict) -> DoctorCheck:
+    from Perevod.model_registry import MODEL_REGISTRY
     model_configs, embedding_model, free_tier_mode = _project_model_profile(
         project_settings
     )
@@ -202,9 +204,50 @@ def _check_model_profile(project_settings: dict) -> DoctorCheck:
         "translation",
         "qa",
         "judge",
+        "expert_judge",
         "editor",
         "summarization",
     ]
+
+    untracked_models = set()
+    category_mismatches = []
+
+    for task in ordered_tasks:
+        model_name = model_configs.get(task)
+        if not model_name:
+            continue
+        spec = MODEL_REGISTRY.get(model_name)
+        if not spec:
+            untracked_models.add(model_name)
+        elif spec.category != "text":
+            category_mismatches.append(
+                f"{task}={model_name} ({spec.category}, expected text)"
+            )
+
+    if embedding_model:
+        spec = MODEL_REGISTRY.get(embedding_model)
+        if not spec:
+            untracked_models.add(embedding_model)
+        elif spec.category != "embedding":
+            category_mismatches.append(
+                f"embedding={embedding_model} ({spec.category}, expected embedding)"
+            )
+
+    if untracked_models:
+        sorted_untracked = sorted(list(untracked_models))
+        return DoctorCheck(
+            "Gemini model profile",
+            STATUS_WARN,
+            f"untracked models={', '.join(sorted_untracked)}",
+        )
+
+    if category_mismatches:
+        return DoctorCheck(
+            "Gemini model profile",
+            STATUS_WARN,
+            "; ".join(category_mismatches),
+        )
+
     task_summary = "; ".join(
         f"{task}={model_configs[task]}"
         for task in ordered_tasks
@@ -303,20 +346,22 @@ def _check_api_connectivity(
             STATUS_FAIL,
             f"timed out after {api_timeout}s; check VPN/network access to Gemini",
         )
-    except google_exceptions.DeadlineExceeded:
-        return DoctorCheck(
-            "Gemini API",
-            STATUS_FAIL,
-            f"timed out after {api_timeout}s; check VPN/network access to Gemini",
-        )
-    except google_exceptions.PermissionDenied as exc:
-        return DoctorCheck("Gemini API", STATUS_FAIL, f"permission/auth error: {exc}")
-    except google_exceptions.Unauthenticated as exc:
-        return DoctorCheck("Gemini API", STATUS_FAIL, f"permission/auth error: {exc}")
-    except google_exceptions.ResourceExhausted as exc:
-        return DoctorCheck("Gemini API", STATUS_FAIL, f"quota/rate limit error: {exc}")
-    except google_exceptions.ServiceUnavailable as exc:
-        return DoctorCheck("Gemini API", STATUS_FAIL, f"service/network unavailable: {exc}")
+    except genai_errors.APIError as exc:
+        code = getattr(exc, "code", None)
+        if code in (401, 403):
+            return DoctorCheck("Gemini API", STATUS_FAIL, f"permission/auth error: {exc}")
+        elif code == 429:
+            return DoctorCheck("Gemini API", STATUS_FAIL, f"quota/rate limit error: {exc}")
+        elif code == 503:
+            return DoctorCheck("Gemini API", STATUS_FAIL, f"service/network unavailable: {exc}")
+        elif code in (408, 504):
+            return DoctorCheck(
+                "Gemini API",
+                STATUS_FAIL,
+                f"timed out after {api_timeout}s; check VPN/network access to Gemini",
+            )
+        else:
+            return DoctorCheck("Gemini API", STATUS_FAIL, f"API error: {exc}")
     except OSError as exc:
         if getattr(exc, "winerror", None) == 10060 or getattr(exc, "errno", None) == 10060:
             return DoctorCheck(

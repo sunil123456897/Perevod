@@ -5,8 +5,11 @@ import hashlib
 from collections import defaultdict
 
 from Perevod.agents.state import AgentState
+from Perevod.agents.checkpoints import chapter_stage_done, mark_chapter_stage
 from Perevod.schemas import AnalysisResult
 from Perevod.agents import nodes
+from Perevod.utils.llm import generate_text
+from Perevod.utils.api_errors import gemini_api_error_metadata
 
 logger = logging.getLogger("NovelTranslator.AgentNodes.Analysis")
 
@@ -45,6 +48,9 @@ CHAPTER TEXT:
 
     for chapter_data in chapters_to_process:
         title = chapter_data.get('title') or chapter_data.get('input_path', 'Untitled')
+        if chapter_stage_done(state, title, "analysis_done"):
+            logger.info("Checkpoint: анализ главы '%s' уже выполнен, пропуск.", title)
+            continue
         try:
             chapter_text = nodes.tool_read_chapter(chapter_data['input_path'])
             if not chapter_text.strip():
@@ -58,20 +64,30 @@ CHAPTER TEXT:
                 logger.info(f"КЭШ [Анализ]: Найден кэш анализа для главы '{title}'.")
                 try:
                     found_terms_for_chapter = json.loads(cached_results_str)
+                    for term in found_terms_for_chapter:
+                        if isinstance(term, dict):
+                            term.setdefault("source_chapter", title)
                     all_found_terms.extend(found_terms_for_chapter)
+                    mark_chapter_stage(db_manager, title, "analysis_done", "done")
                     continue
                 except Exception as cache_err:
                     logger.warning(f"Ошибка при декодировании кэша анализа главы '{title}': {cache_err}. Выполняется запрос к API.")
 
             # Если кэша нет, запрашиваем LLM
             logger.info(f"Запрос к API для анализа главы '{title}'...")
-            response = analysis_model.generate_content(
-                analysis_prompt_template.format(title=title, chapter_text=chapter_text)
+            response_text = generate_text(
+                analysis_model,
+                analysis_prompt_template.format(title=title, chapter_text=chapter_text),
+                context.get("settings", {}),
             )
-            parsed_response = nodes.safe_json_loads(getattr(response, "text", ""), default={})
+            parsed_response = nodes.safe_json_loads(response_text, default={})
             analysis_result = AnalysisResult.model_validate(parsed_response)
-            found_terms_list = [term.model_dump() for term in analysis_result.found_terms]
+            found_terms_list = [
+                {**term.model_dump(), "source_chapter": title}
+                for term in analysis_result.found_terms
+            ]
             all_found_terms.extend(found_terms_list)
+            mark_chapter_stage(db_manager, title, "analysis_done", "done")
 
             # Сохраняем в кэш
             try:
@@ -82,7 +98,20 @@ CHAPTER TEXT:
 
         except Exception as e:
             logger.error(f"Ошибка анализа главы '{title}': {e}", exc_info=True)
-            analysis_errors.append({"title": title, "error": str(e)})
+            analysis_errors.append(
+                {
+                    "title": title,
+                    "error": str(e),
+                    **gemini_api_error_metadata(e),
+                }
+            )
+            mark_chapter_stage(
+                db_manager,
+                title,
+                "analysis_done",
+                "failed",
+                error=str(e),
+            )
 
     logger.info(f"Анализ завершен. Найдено терминов: {len(all_found_terms)}")
     return {"analysis_results": all_found_terms, "analysis_errors": analysis_errors}
@@ -98,6 +127,15 @@ def autonomous_curation_node(state: AgentState) -> dict:
     analysis_results = state.get('analysis_results', [])
     context = state.get('app_context', {})
     llm_provider = context.get('llm_provider')
+    db_manager = context.get("db_manager")
+    chapters_to_process = state.get("chapters_to_process", [])
+
+    if chapters_to_process and all(
+        chapter_stage_done(state, chapter.get("title"), "glossary_updated")
+        for chapter in chapters_to_process
+    ):
+        logger.info("Checkpoint: словарь уже обновлен для всех глав, курирование пропущено.")
+        return {"unification_verdicts": []}
 
     if not analysis_results:
         logger.info("Результаты анализа пусты. Пропускаем курирование.")
@@ -162,8 +200,12 @@ def autonomous_curation_node(state: AgentState) -> dict:
             """
 
             try:
-                response = curation_model.generate_content(prompt)
-                choice_data = nodes.safe_json_loads(getattr(response, "text", ""), default={})
+                response_text = generate_text(
+                    curation_model,
+                    prompt,
+                    context.get("settings", {}),
+                )
+                choice_data = nodes.safe_json_loads(response_text, default={})
                 chosen_variant = choice_data.get("chosen_variant")
 
                 if chosen_variant and chosen_variant in variants:
@@ -193,5 +235,13 @@ def autonomous_curation_node(state: AgentState) -> dict:
         logger.warning("После курирования не осталось вердиктов. Словарь не будет обновлен.")
     else:
         logger.info(f"Курирование завершено. Сформировано {len(final_verdicts)} вердиктов для обновления словаря.")
+
+    for chapter_data in chapters_to_process:
+        mark_chapter_stage(
+            db_manager,
+            chapter_data.get("title"),
+            "glossary_updated",
+            "done",
+        )
 
     return {"unification_verdicts": final_verdicts}

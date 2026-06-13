@@ -1,5 +1,5 @@
 # src/Perevod/agents/nodes/__init__.py
-from Perevod.utils.file_io import tool_read_chapter, tool_write_chapter
+from Perevod.utils.file_io import tool_backup_file, tool_read_chapter, tool_write_chapter
 from Perevod.utils.llm import safe_json_loads, tool_translate_chunk, clean_translation_output
 from Perevod.utils.caching import generate_translation_cache_key
 from Perevod.utils.translation_quality import evaluate_translation_sanity
@@ -29,6 +29,7 @@ __all__ = [
     "context_retrieval_node",
     "summarization_node",
     "tool_read_chapter",
+    "tool_backup_file",
     "tool_write_chapter",
     "tool_translate_chunk",
     "safe_json_loads",

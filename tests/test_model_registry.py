@@ -10,9 +10,13 @@ from Perevod.model_registry import (
 
 
 def test_default_daily_limits_match_free_tier_profile():
+    from Perevod.model_registry import GEMINI_35_FLASH, GEMMA_31B, GEMMA_26B
     assert default_daily_limits() == {
         GEMINI_FLASH: 20,
+        GEMINI_35_FLASH: 20,
         GEMINI_FLASH_LITE: 500,
+        GEMMA_31B: 1500,
+        GEMMA_26B: 1500,
         GEMINI_EMBEDDING: 1000,
     }
 

@@ -2,6 +2,7 @@
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+import json
 import os
 import threading
 import logging
@@ -50,6 +51,185 @@ gui_logger = logging.getLogger("NovelTranslator.GUI")
 PLACEHOLDER_API_KEY_MESSAGE = (
     "API ключ выглядит как test/fake placeholder. Укажите реальный GOOGLE_API_KEY."
 )
+
+WORKFLOW_STAGE_LABELS = {
+    "context": "Контекст",
+    "analysis": "Анализ",
+    "curation": "Словарь",
+    "translation": "Перевод",
+    "judge": "Judge",
+    "refine": "Refine",
+    "summary": "Summary",
+}
+
+
+def format_workflow_progress(stage, current, total, message):
+    stage_label = WORKFLOW_STAGE_LABELS.get(str(stage), str(stage))
+    try:
+        current_int = int(current)
+        total_int = int(total)
+    except (TypeError, ValueError):
+        current_int = 0
+        total_int = 0
+
+    percent = int((current_int / total_int) * 100) if total_int else 0
+    percent = max(0, min(100, percent))
+    if total_int:
+        return percent, f"{stage_label}: {current_int}/{total_int} - {message}"
+    return percent, f"{stage_label}: {message}"
+
+
+def summarize_translation_report(report_path: str | None) -> str:
+    if not report_path or not os.path.exists(report_path):
+        return ""
+    try:
+        with open(report_path, encoding="utf-8") as report_file:
+            report = json.load(report_file)
+    except (OSError, json.JSONDecodeError) as exc:
+        gui_logger.warning("Не удалось прочитать translation_report.json: %s", exc)
+        return ""
+
+    chapters = report.get("chapters", [])
+    if not isinstance(chapters, list):
+        chapters = []
+
+    total = report.get("total_chapters", len(chapters))
+    processed = report.get("processed_count", 0)
+    failed = report.get("failed_count")
+    if failed is None:
+        failed = sum(
+            1
+            for chapter in chapters
+            if isinstance(chapter, dict)
+            and chapter.get("status") in {"failed", "qa_failed"}
+        )
+    chapter_warning_total = sum(
+        _chapter_warning_count(chapter)
+        for chapter in chapters
+        if isinstance(chapter, dict)
+    )
+    warnings = report.get("warning_count")
+    if warnings is None:
+        warnings = chapter_warning_total
+    else:
+        warnings = max(warnings, chapter_warning_total)
+    qa_failed = sum(
+        1
+        for chapter in chapters
+        if isinstance(chapter, dict) and chapter.get("status") == "qa_failed"
+    )
+
+    summary = (
+        f"Сводка: всего {total}, обработано {processed}, "
+        f"failed {failed}, qa_failed {qa_failed}, warnings {warnings}."
+    )
+    problem_titles = [
+        str(chapter.get("title"))
+        for chapter in chapters
+        if isinstance(chapter, dict)
+        and chapter.get("status") in {"failed", "qa_failed"}
+        and chapter.get("title")
+    ]
+    if problem_titles:
+        shown = ", ".join(problem_titles[:3])
+        if len(problem_titles) > 3:
+            shown = f"{shown}..."
+        summary = f"{summary} Проблемные главы: {shown}."
+    return summary
+
+
+def _chapter_warning_count(chapter: dict) -> int:
+    return len(chapter.get("warnings") or []) + len(
+        chapter.get("context_warnings") or []
+    )
+
+
+def _format_context_warning(warning: dict | object) -> str:
+    if not isinstance(warning, dict):
+        return str(warning)
+    scope = warning.get("scope") or "context"
+    error = warning.get("error") or "unknown error"
+    return f"{scope}: {error}"
+
+
+def join_status_parts(*parts: str) -> str:
+    clean_parts = [part.strip().rstrip(".") for part in parts if part and part.strip()]
+    return ". ".join(clean_parts)
+
+
+def format_translation_report_details(report_path: str | None) -> str:
+    if not report_path or not os.path.exists(report_path):
+        return "translation_report.json не найден."
+    try:
+        with open(report_path, encoding="utf-8") as report_file:
+            report = json.load(report_file)
+    except (OSError, json.JSONDecodeError) as exc:
+        return f"Не удалось прочитать translation_report.json: {exc}"
+
+    lines = [summarize_translation_report(report_path) or "Сводка недоступна."]
+    lines.append(f"Отчет: {report_path}")
+    chapters = report.get("chapters", [])
+    if not isinstance(chapters, list):
+        return "\n".join(lines)
+
+    problem_chapters = [
+        chapter
+        for chapter in chapters
+        if isinstance(chapter, dict)
+        and (
+            chapter.get("status") in {"failed", "qa_failed"}
+            or chapter.get("warnings")
+            or chapter.get("context_warnings")
+            or chapter.get("blocking_issues")
+        )
+    ]
+    if not problem_chapters:
+        lines.append("Проблемных глав нет.")
+        return "\n".join(lines)
+
+    lines.append("")
+    lines.append("Проблемные главы:")
+    for chapter in problem_chapters[:10]:
+        title = chapter.get("title") or "Untitled"
+        status = chapter.get("status") or "unknown"
+        stages = chapter.get("stages") or {}
+        failed_stages = [
+            stage for stage, value in stages.items() if value == "failed"
+        ]
+        details = [f"- {title}: {status}"]
+        if failed_stages:
+            details.append(f"failed stages: {', '.join(failed_stages)}")
+        if chapter.get("blocking_issues"):
+            details.append(
+                "blocking: " + "; ".join(map(str, chapter["blocking_issues"][:3]))
+            )
+        if chapter.get("warnings"):
+            details.append("warnings: " + "; ".join(map(str, chapter["warnings"][:3])))
+        if chapter.get("context_warnings"):
+            details.append(
+                "context warnings: "
+                + "; ".join(
+                    _format_context_warning(warning)
+                    for warning in chapter["context_warnings"][:3]
+                )
+            )
+        if chapter.get("error_category"):
+            api_details = [
+                f"api: {chapter.get('error_category')}",
+                f"status {chapter.get('error_status_code')}",
+                f"retryable {chapter.get('error_retryable')}",
+            ]
+            if chapter.get("error_operation"):
+                api_details.append(f"op {chapter.get('error_operation')}")
+            if chapter.get("error_model"):
+                api_details.append(f"model {chapter.get('error_model')}")
+            details.append(", ".join(api_details))
+        if chapter.get("error"):
+            details.append(f"error: {chapter['error']}")
+        lines.append(" | ".join(details))
+    if len(problem_chapters) > 10:
+        lines.append(f"...и еще {len(problem_chapters) - 10} глав.")
+    return "\n".join(lines)
 
 
 class TextHandler(logging.Handler):
@@ -102,7 +282,7 @@ class TranslatorGUI(ctk.CTk):
             "GOOGLE_API_KEY": ctk.StringVar(value=settings.GOOGLE_API_KEY),
             "input_dir": ctk.StringVar(),
             "output_dir": ctk.StringVar(),
-            "overwrite_existing": ctk.BooleanVar(value=True),
+            "overwrite_existing": ctk.BooleanVar(value=False),
             "temperature": ctk.DoubleVar(value=settings.temperature),
             "top_p": ctk.DoubleVar(value=settings.top_p),
             "embedding_model_name": ctk.StringVar(value=settings.embedding_model_name),
@@ -279,7 +459,7 @@ class TranslatorGUI(ctk.CTk):
         # --- Bottom Control Action Panel ---
         actions_frame = ctk.CTkFrame(self, fg_color="transparent")
         actions_frame.grid(row=4, column=0, padx=15, pady=(5, 15), sticky="ew")
-        actions_frame.grid_columnconfigure(list(range(6)), weight=1)
+        actions_frame.grid_columnconfigure(list(range(7)), weight=1)
 
         self.init_button = ctk.CTkButton(
             actions_frame,
@@ -357,6 +537,19 @@ class TranslatorGUI(ctk.CTk):
             corner_radius=10
         )
         self.diag_button.grid(row=0, column=5, padx=5, pady=5, sticky="ew")
+
+        self.report_button = ctk.CTkButton(
+            actions_frame,
+            text="📄 Отчет",
+            font=ctk.CTkFont(family=FONT_FAMILY, size=12, weight="bold"),
+            height=40,
+            command=self.show_translation_report,
+            state=ctk.DISABLED,
+            fg_color=COLOR_GREY,
+            hover_color=COLOR_GREY_HOVER,
+            corner_radius=10,
+        )
+        self.report_button.grid(row=0, column=6, padx=5, pady=5, sticky="ew")
 
     def create_main_tab(self, tab):
         tab.grid_columnconfigure(0, weight=1)
@@ -592,6 +785,7 @@ class TranslatorGUI(ctk.CTk):
             self.build_index_button,
             self.quarantine_button,
             self.diag_button,
+            self.report_button,
         ]:
             button.configure(state=state)
         self.project_combo.configure(state="disabled" if is_running else "readonly")
@@ -617,6 +811,10 @@ class TranslatorGUI(ctk.CTk):
                     pass
                 
             self.update_idletasks()
+
+    def update_workflow_progress(self, stage, current, total, message):
+        percent, text = format_workflow_progress(stage, current, total, message)
+        self.after(0, self.update_progress, percent, text)
 
     def load_initial_settings(self):
         self.update_project_list()
@@ -710,6 +908,7 @@ class TranslatorGUI(ctk.CTk):
             self.build_index_button,
             self.quarantine_button,
             self.diag_button,
+            self.report_button,
         ]:
             btn.configure(state=state)
 
@@ -841,6 +1040,16 @@ class TranslatorGUI(ctk.CTk):
         if is_placeholder_api_key(settings.get("GOOGLE_API_KEY", "")):
             messagebox.showerror("Ошибка", PLACEHOLDER_API_KEY_MESSAGE)
             return
+        if settings.get("overwrite_existing"):
+            confirmed = messagebox.askyesno(
+                "Подтвердите перезапись",
+                "Включена перезапись существующих переводов. "
+                "Старые файлы будут сохранены рядом как .bak, но готовые главы "
+                "будут переведены заново. Продолжить?",
+            )
+            if not confirmed:
+                self.update_progress(0, "Перевод отменен: перезапись не подтверждена.")
+                return
         self.translation_running = True
         status_label = self.__dict__.get("status_label")
         if status_label is not None:
@@ -857,21 +1066,45 @@ class TranslatorGUI(ctk.CTk):
     def _translation_thread(self):
         self.translation_running = True
         self.after(0, self.update_ui_for_translation_state, True)
+        current_settings = {}
         try:
             current_settings = self.get_current_settings_from_ui()
             final_state = run_translation_workflow(
                 project_name=current_settings["project_name"],
                 project_settings=current_settings,
-                progress_callback=self.update_progress,
+                progress_callback=self.update_workflow_progress,
             )
+            report_path = final_state.get("report_path")
+            report_summary = summarize_translation_report(report_path)
             if final_state.get("error"):
-                raise Exception(final_state["error"])
-            self.update_progress(100, f"Перевод и аудит успешно завершены! Обработано глав: {len(final_state.get('processed_chapters', []))}")
+                error_text = str(final_state["error"])
+                if report_summary:
+                    error_text = join_status_parts(error_text, report_summary)
+                if report_path:
+                    error_text = join_status_parts(error_text, f"Отчет: {report_path}")
+                raise Exception(error_text)
+            status_text = (
+                f"Перевод и аудит успешно завершены! "
+                f"Обработано глав: {len(final_state.get('processed_chapters', []))}"
+            )
+            if report_summary:
+                status_text = join_status_parts(status_text, report_summary)
+            if report_path:
+                status_text = join_status_parts(status_text, f"Отчет: {report_path}")
+            self.after(0, self.update_progress, 100, status_text)
             gui_logger.info("Полный цикл перевода и аудита успешно завершен.")
         except Exception as e:
-            error_message = f"Критическая ошибка в рабочем процессе: {e}"
+            error_text = str(e)
+            output_dir = current_settings.get("output_dir") if current_settings else None
+            if output_dir:
+                report_path = os.path.join(output_dir, "translation_report.json")
+                report_summary = summarize_translation_report(report_path)
+                if report_summary:
+                    error_text = join_status_parts(error_text, report_summary)
+                error_text = join_status_parts(error_text, f"Отчет: {report_path}")
+            error_message = f"Критическая ошибка в рабочем процессе: {error_text}"
             gui_logger.error(error_message, exc_info=True)
-            self.after(0, self.update_progress, 0, f"Ошибка: {e}")
+            self.after(0, self.update_progress, 0, f"Ошибка: {error_text}")
             self.after(0, messagebox.showerror, "Ошибка Перевода", error_message)
         finally:
             self.translation_running = False
@@ -896,9 +1129,19 @@ class TranslatorGUI(ctk.CTk):
 
     def open_quarantine_editor(self):
         if self.db_manager:
-            QuarantineEditorWindow(self, self.db_manager)
+            QuarantineEditorWindow(self, self.db_manager, kb_manager=self.kb_manager)
         else:
             messagebox.showerror("Ошибка", "Сначала инициализируйте проект.")
+
+    def show_translation_report(self):
+        settings = self.get_current_settings_from_ui()
+        output_dir = settings.get("output_dir")
+        if not output_dir:
+            messagebox.showerror("Ошибка", "Сначала укажите output_dir.")
+            return
+        report_path = os.path.join(output_dir, "translation_report.json")
+        details = format_translation_report_details(report_path)
+        messagebox.showinfo("Отчет перевода", details)
 
     def run_db_diagnostics(self):
         project_name = self.settings_vars["project_name"].get()

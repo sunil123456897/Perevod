@@ -11,6 +11,8 @@ from sqlalchemy import (
     JSON,
     UniqueConstraint,
     event,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import relationship, sessionmaker, declarative_base
 
@@ -39,6 +41,9 @@ class Project(Base):
     )
     translation_cache_entries = relationship(
         "TranslationCache", back_populates="project", cascade="all, delete-orphan"
+    )
+    chapter_runs = relationship(
+        "ChapterRun", back_populates="project", cascade="all, delete-orphan"
     )
     quarantined_terms = relationship(
         "QuarantinedTerm", back_populates="project", cascade="all, delete-orphan"
@@ -118,6 +123,9 @@ class DictionaryProposal(Base):
     russian_term = Column(String, nullable=False)
     category = Column(String, default="other")
     confidence = Column(Float, default=0.0)
+    status = Column(String, nullable=False, default="candidate")
+    source_chapter = Column(String)
+    reason = Column(Text)
 
     project = relationship("Project", back_populates="dictionary_proposals")
 
@@ -158,16 +166,95 @@ class TranslationCache(Base):
     project = relationship("Project", back_populates="translation_cache_entries")
 
 
+class ChapterRun(Base):
+    """Project-scoped checkpoint state for a chapter workflow run."""
+
+    __tablename__ = "chapter_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "title",
+            name="uq_chapter_runs_project_title",
+        ),
+    )
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    title = Column(String, nullable=False)
+    input_path = Column(String, nullable=False)
+    output_path = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="discovered")
+    stages_json = Column(JSON, nullable=False, default=lambda: {})
+    context = Column(Text)
+    judge_result_json = Column(JSON)
+    refine_result_json = Column(JSON)
+    summary_result_json = Column(JSON)
+    error = Column(Text)
+
+    project = relationship("Project", back_populates="chapter_runs")
+
+
 def get_engine_and_session(db_path):
     """Вспомогательная функция для создания движка и сессии."""
-    engine = create_engine(f"sqlite:///{db_path}")
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"timeout": 30.0})
 
     @event.listens_for(engine, "connect")
     def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA journal_mode=WAL")
         cursor.close()
 
     Base.metadata.create_all(engine)
+    _repair_legacy_schema(engine)
     Session = sessionmaker(bind=engine)
     return engine, Session
+
+
+def _repair_legacy_schema(engine) -> None:
+    inspector = inspect(engine)
+    if "dictionary_proposals" in inspector.get_table_names():
+        proposal_columns = {
+            column["name"] for column in inspector.get_columns("dictionary_proposals")
+        }
+        if "status" not in proposal_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE dictionary_proposals "
+                        "ADD COLUMN status VARCHAR NOT NULL DEFAULT 'candidate'"
+                    )
+                )
+        if "source_chapter" not in proposal_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE dictionary_proposals "
+                        "ADD COLUMN source_chapter VARCHAR"
+                    )
+                )
+        if "reason" not in proposal_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE dictionary_proposals ADD COLUMN reason TEXT")
+                )
+    if "chapter_runs" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("chapter_runs")}
+    if "context" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE chapter_runs ADD COLUMN context TEXT"))
+    if "judge_result_json" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE chapter_runs ADD COLUMN judge_result_json JSON")
+            )
+    if "refine_result_json" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE chapter_runs ADD COLUMN refine_result_json JSON")
+            )
+    if "summary_result_json" not in columns:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE chapter_runs ADD COLUMN summary_result_json JSON")
+            )

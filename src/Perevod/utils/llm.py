@@ -125,6 +125,14 @@ def _rate_limit_model(model, sleep_func=time.sleep, monotonic_func=None) -> None
         _LAST_REQUEST_AT[model_name] = now
 
 
+def _model_handles_gateway_concerns(model) -> bool:
+    try:
+        from Perevod.llm_provider import GeminiModelAdapter
+    except Exception:
+        return False
+    return isinstance(model, GeminiModelAdapter)
+
+
 def generate_text(
     model,
     prompt: str,
@@ -139,9 +147,12 @@ def generate_text(
         **_build_generation_config(settings),
     }
     request_options = {"timeout": _get_request_timeout(settings)}
-    for attempt in range(1, max_retries + 1):
+    gateway_model = _model_handles_gateway_concerns(model)
+    retry_attempts = 1 if gateway_model else max_retries
+    for attempt in range(1, retry_attempts + 1):
         try:
-            _rate_limit_model(model, sleep_func=sleep_func)
+            if not gateway_model:
+                _rate_limit_model(model, sleep_func=sleep_func)
             response = model.generate_content(
                 prompt,
                 generation_config=generation_config,
@@ -166,7 +177,7 @@ def generate_text(
             if not is_retryable_api_error(e):
                 logger.error(f"Ошибка при запросе к LLM: {e}", exc_info=True)
                 raise
-            if attempt >= max_retries:
+            if attempt >= retry_attempts:
                 logger.error(
                     f"Достигнуто максимальное количество повторных попыток. Не удалось выполнить запрос к LLM: {e}",
                     exc_info=True,
@@ -174,7 +185,7 @@ def generate_text(
                 raise
             delay = initial_delay * (2 ** (attempt - 1))
             logger.warning(
-                f"Временная ошибка API. Повторная попытка {attempt}/{max_retries} через {delay:.2f} секунд..."
+                f"Временная ошибка API. Повторная попытка {attempt}/{retry_attempts} через {delay:.2f} секунд..."
             )
             sleep_func(delay)
     return ""

@@ -37,6 +37,7 @@ def test_graph_runs_judge_after_translation():
 @patch("Perevod.graph_runner._acquire_workflow_lock", return_value="lock")
 @patch("Perevod.graph_runner.os.path.exists", return_value=False)
 @patch("Perevod.graph_runner.os.path.isfile", return_value=True)
+@patch("Perevod.graph_runner.os.path.isdir", return_value=True)
 @patch("Perevod.graph_runner.os.listdir", return_value=["chapter1.txt"])
 @patch("Perevod.graph_runner.build_graph")
 @patch("Perevod.graph_runner.DatabaseManager")
@@ -48,6 +49,7 @@ def test_workflow_wires_dependencies_and_chapters(
     mock_db_manager,
     mock_build_graph,
     mock_listdir,
+    mock_isdir,
     mock_isfile,
     mock_exists,
     mock_acquire_lock,
@@ -74,7 +76,7 @@ def test_workflow_wires_dependencies_and_chapters(
     mock_makedirs.assert_called_once_with(r"C:\novel\output", exist_ok=True)
     mock_listdir.assert_called_once_with(r"C:\novel\input")
     mock_isfile.assert_called_once()
-    mock_exists.assert_not_called()
+    mock_exists.assert_called_once_with(r"C:\novel\output\chapter1.txt")
     mock_db_manager.assert_called_once_with("integration_test_project")
     mock_kb_manager.assert_called_once()
     mock_llm_provider.assert_called_once()
@@ -97,9 +99,11 @@ def test_workflow_wires_dependencies_and_chapters(
 @patch("Perevod.graph_runner._release_workflow_lock")
 @patch("Perevod.graph_runner._acquire_workflow_lock", return_value="lock")
 @patch("Perevod.graph_runner.os.path.isfile", return_value=True)
+@patch("Perevod.graph_runner.os.path.isdir", return_value=True)
 @patch("Perevod.graph_runner.os.listdir", return_value=["chapter1.txt"])
 def test_workflow_requires_api_key(
     mock_listdir,
+    mock_isdir,
     mock_isfile,
     mock_acquire_lock,
     mock_release_lock,
@@ -124,6 +128,7 @@ def test_workflow_requires_api_key(
 @patch("Perevod.graph_runner._acquire_workflow_lock", return_value="lock")
 @patch("Perevod.graph_runner.os.path.exists", return_value=False)
 @patch("Perevod.graph_runner.os.path.isfile", return_value=True)
+@patch("Perevod.graph_runner.os.path.isdir", return_value=True)
 @patch("Perevod.graph_runner.os.listdir", return_value=["chapter1.txt"])
 @patch("Perevod.graph_runner.build_graph")
 @patch("Perevod.graph_runner.DatabaseManager")
@@ -135,6 +140,7 @@ def test_workflow_rejects_placeholder_api_key(
     mock_db_manager,
     mock_build_graph,
     mock_listdir,
+    mock_isdir,
     mock_isfile,
     mock_exists,
     mock_acquire_lock,

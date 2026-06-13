@@ -2,7 +2,14 @@
 import logging
 
 from Perevod.agents.state import AgentState
+from Perevod.agents.checkpoints import (
+    chapter_stage_done,
+    mark_chapter_stage,
+    update_chapter_refine_result,
+)
 from Perevod.agents.nodes.translation import _report_progress
+from Perevod.utils.api_errors import gemini_api_error_metadata
+from Perevod.utils.llm import generate_text
 
 logger = logging.getLogger("NovelTranslator.AgentNodes.Refine")
 
@@ -51,6 +58,7 @@ DIRECTIONS:
 
     total_chapters = len(processed_chapters)
     workflow_error = None
+    workflow_error_metadata = {}
     _report_progress(
         progress_callback,
         "refine",
@@ -62,9 +70,20 @@ DIRECTIONS:
     for index, chapter_data in enumerate(processed_chapters):
         title = chapter_data.get("title", "Untitled")
         chapter_issues = chapter_data.get("blocking_issues", [])
+        checkpoint_refine_result = (
+            ((state.get("chapter_runs") or {}).get(title) or {}).get("refine_result")
+            or {}
+        )
 
         if not chapter_issues:
             logger.info(f"Глава '{title}' не имеет блокирующих ошибок. Пропуск.")
+            continue
+        if chapter_stage_done(state, title, "refine_done"):
+            logger.info("Checkpoint: редактура главы '%s' уже выполнена, пропуск.", title)
+            chapter_data["refined"] = True
+            chapter_data["checkpoint_reused"] = True
+            if checkpoint_refine_result:
+                chapter_data["refine_result"] = checkpoint_refine_result
             continue
 
         try:
@@ -86,27 +105,31 @@ DIRECTIONS:
                 translated_text=translated_text,
             )
 
-            response = editor_model.generate_content(prompt)
-            corrected_text = clean_translation_output(getattr(response, "text", ""))
+            response_text = generate_text(
+                editor_model,
+                prompt,
+                context.get("settings", {}),
+            )
+            corrected_text = clean_translation_output(response_text)
 
             if not corrected_text:
                 raise ValueError("редактор вернул пустую правку")
 
             tool_write_chapter(chapter_data["output_path"], corrected_text)
+            chapter_data["refined"] = True
+            refine_result = {
+                "refined": True,
+                "refinement_count": refinement_count,
+                "issues_fixed": list(chapter_issues),
+            }
+            chapter_data["refine_result"] = refine_result
+            chapter_data["blocking_issues"] = []
             logger.info(f"Редактор исправил главу '{title}'.")
 
-            # Update cache
+            # Keep editor corrections out of the translation cache until judge_node
+            # approves the corrected file on the next QA pass.
             if chapter_data.get("cache_key"):
                 cache_key = chapter_data["cache_key"]
-                try:
-                    db_manager.add_to_cache(cache_key, corrected_text)
-                except Exception as exc:
-                    logger.warning(
-                        "Не удалось сохранить исправленный перевод главы '%s' в кэш: %s",
-                        title,
-                        exc,
-                        exc_info=True,
-                    )
                 try:
                     # Update KB with correction context
                     kb_manager.add_or_update_entries(
@@ -134,9 +157,19 @@ DIRECTIONS:
                 total_chapters,
                 f"Уточнение главы '{title}' завершено",
             )
+            mark_chapter_stage(db_manager, title, "refine_done", "done")
+            update_chapter_refine_result(db_manager, title, refine_result)
         except Exception as e:
             workflow_error = f"Ошибка Редактора для главы '{title}': {e}"
+            workflow_error_metadata = gemini_api_error_metadata(e)
             logger.error(workflow_error, exc_info=True)
+            mark_chapter_stage(
+                db_manager,
+                title,
+                "refine_done",
+                "failed",
+                error=workflow_error,
+            )
             _report_progress(
                 progress_callback,
                 "refine",
@@ -146,7 +179,12 @@ DIRECTIONS:
             )
             break
 
-    result = {"refinement_count": refinement_count}
+    result = {
+        "processed_chapters": processed_chapters,
+        "blocking_issues": [],
+        "refinement_count": refinement_count,
+    }
     if workflow_error:
         result["error"] = workflow_error
+        result.update(workflow_error_metadata)
     return result

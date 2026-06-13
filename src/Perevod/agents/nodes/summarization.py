@@ -2,7 +2,13 @@
 import logging
 
 from Perevod.agents.state import AgentState
-from Perevod.utils.llm import safe_json_loads
+from Perevod.agents.checkpoints import (
+    chapter_stage_done,
+    mark_chapter_stage,
+    update_chapter_summary_result,
+)
+from Perevod.utils.llm import generate_text, safe_json_loads
+from Perevod.utils.api_errors import gemini_api_error_metadata
 from Perevod.schemas import ChapterSummary
 from Perevod.agents.nodes.translation import _chapter_index_from_title
 
@@ -19,7 +25,41 @@ def summarization_node(state: AgentState) -> dict:
     context = state["app_context"]
     processed_chapters = state.get("processed_chapters", [])
     kb_manager = context["kb_manager"]
+    db_manager = context.get("db_manager")
     project_name = state.get("project_name", "default")
+
+    summaries = []
+    summary_errors = []
+
+    if not processed_chapters:
+        return {
+            "chapter_summaries": [],
+            "summary_errors": []
+        }
+
+    if not kb_manager:
+        error = "Knowledge base manager is unavailable; chapter memory was not updated."
+        for chapter_data in processed_chapters:
+            title = chapter_data.get("title", "Untitled")
+            summary_errors.append({"title": title, "error": error})
+            mark_chapter_stage(
+                db_manager,
+                title,
+                "summary_done",
+                "failed",
+                error=error,
+            )
+            mark_chapter_stage(
+                db_manager,
+                title,
+                "memory_updated",
+                "failed",
+                error=error,
+            )
+        return {
+            "chapter_summaries": summaries,
+            "summary_errors": summary_errors,
+        }
 
     # Try to get 'summarization' model, fallback to 'qa'
     try:
@@ -37,32 +77,54 @@ Return ONLY a valid JSON object matching this schema:
 }
 """
 
-    summaries = []
-    summary_errors = []
-
-    if not processed_chapters:
-        return {
-            "chapter_summaries": [],
-            "summary_errors": []
-        }
-
     for chapter_data in processed_chapters:
         title = chapter_data.get("title", "Untitled")
         output_path = chapter_data.get("output_path")
+        checkpoint_summary_result = (
+            ((state.get("chapter_runs") or {}).get(title) or {}).get("summary_result")
+            or {}
+        )
+
+        if chapter_stage_done(state, title, "summary_done") and chapter_stage_done(
+            state,
+            title,
+            "memory_updated",
+        ):
+            logger.info("Checkpoint: саммари главы '%s' уже выполнено, пропуск.", title)
+            if checkpoint_summary_result:
+                summaries.append(
+                    {
+                        **checkpoint_summary_result,
+                        "checkpoint_reused": True,
+                    }
+                )
+            else:
+                summaries.append({"title": title, "checkpoint_reused": True})
+            continue
 
         try:
             translated_text = tool_read_chapter(output_path)
             if not translated_text.strip():
+                error = "Translated output is empty; chapter memory was not updated."
                 summary_errors.append({
                     "title": title,
-                    "error": "Translated output is empty; chapter memory was not updated."
+                    "error": error
                 })
+                mark_chapter_stage(
+                    db_manager,
+                    title,
+                    "summary_done",
+                    "failed",
+                    error=error,
+                )
                 continue
 
-            response = summary_model.generate_content(
-                summarization_prompt_template + f"\nCHAPTER TEXT:\n{translated_text}"
+            response_text = generate_text(
+                summary_model,
+                summarization_prompt_template + f"\nCHAPTER TEXT:\n{translated_text}",
+                context.get("settings", {}),
             )
-            parsed_response = safe_json_loads(getattr(response, "text", ""), default={})
+            parsed_response = safe_json_loads(response_text, default={})
             
             # Если в ответе нет title, подставляем текущий title главы
             if not parsed_response.get("title"):
@@ -109,16 +171,35 @@ Return ONLY a valid JSON object matching this schema:
                         }
                     ],
                     ids=[f"memory_{project_name}_{title}"],
-                    embeddings=[[0.0] * 3072]
                 )
                 logger.info(f"Саммари для главы '{title}' добавлено в БЗ.")
+                mark_chapter_stage(db_manager, title, "summary_done", "done")
+                mark_chapter_stage(db_manager, title, "memory_updated", "done")
+                update_chapter_summary_result(
+                    db_manager,
+                    title,
+                    {
+                        **summary_dict,
+                        "chapter_index": ch_idx,
+                    },
+                )
 
         except Exception as e:
             logger.error(f"Ошибка Саммари для главы '{title}': {e}", exc_info=True)
-            summary_errors.append({
-                "title": title,
-                "error": str(e)
-            })
+            summary_errors.append(
+                {
+                    "title": title,
+                    "error": str(e),
+                    **gemini_api_error_metadata(e),
+                }
+            )
+            mark_chapter_stage(
+                db_manager,
+                title,
+                "summary_done",
+                "failed",
+                error=str(e),
+            )
 
     return {
         "chapter_summaries": summaries,

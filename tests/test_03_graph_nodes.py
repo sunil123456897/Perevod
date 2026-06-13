@@ -12,6 +12,7 @@ from Perevod.agents.nodes import (
     autonomous_curation_node,
     translation_node,
 )
+from Perevod.utils.api_errors import ApiErrorInfo, GeminiAPIError
 
 
 class MockResponse:
@@ -117,14 +118,20 @@ def test_analysis_node_extracts_terms_from_chapters(mock_read_chapter, base_agen
     )
     mock_read_chapter.assert_called_once_with("ch1.txt")
     assert result["analysis_results"] == [
-        {
-            "english_term": "Council",
-            "russian_translation": "Совет",
-            "category": "Faction",
-            "description": "A ruling group.",
-        }
-    ]
+            {
+                "english_term": "Council",
+                "russian_translation": "Совет",
+                "category": "Faction",
+                "description": "A ruling group.",
+                "source_chapter": "ch1.txt",
+            }
+        ]
     assert result["analysis_errors"] == []
+    base_agent_state["app_context"]["db_manager"].mark_chapter_stage.assert_called_with(
+        "ch1.txt",
+        "analysis_done",
+        "done",
+    )
 
 
 @patch("Perevod.agents.nodes.tool_read_chapter", return_value="Council met in Dawnkeep.")
@@ -138,15 +145,72 @@ def test_analysis_node_reports_non_fatal_api_errors(mock_read_chapter, base_agen
     assert result["analysis_errors"] == [
         {"title": "ch1.txt", "error": "quota exhausted"}
     ]
+    base_agent_state["app_context"]["db_manager"].mark_chapter_stage.assert_called_with(
+        "ch1.txt",
+        "analysis_done",
+        "failed",
+        error="quota exhausted",
+    )
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter", return_value="Council met in Dawnkeep.")
+def test_analysis_node_preserves_gemini_error_metadata(
+    mock_read_chapter, base_agent_state
+):
+    analysis_model = base_agent_state["app_context"]["llm_provider"].get_model.return_value
+    analysis_model.generate_content.side_effect = GeminiAPIError(
+        model_name="gemini-3-flash-preview",
+        operation="generateContent",
+        info=ApiErrorInfo(
+            category="quota",
+            retryable=False,
+            status_code=429,
+            message="quota exhausted",
+        ),
+        original_error=RuntimeError("quota exhausted"),
+    )
+
+    result = analysis_node(base_agent_state)
+
+    analysis_error = result["analysis_errors"][0]
+    assert analysis_error["title"] == "ch1.txt"
+    assert analysis_error["error_category"] == "quota"
+    assert analysis_error["error_retryable"] is False
+    assert analysis_error["error_status_code"] == 429
+    assert analysis_error["error_operation"] == "generateContent"
+    assert analysis_error["error_model"] == "gemini-3-flash-preview"
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter")
+def test_analysis_node_skips_chapter_with_done_checkpoint(
+    mock_read_chapter, base_agent_state
+):
+    analysis_model = base_agent_state["app_context"]["llm_provider"].get_model.return_value
+    base_agent_state["chapter_runs"] = {
+        "ch1.txt": {"stages": {"analysis_done": "done"}}
+    }
+
+    result = analysis_node(base_agent_state)
+
+    assert result == {"analysis_results": [], "analysis_errors": []}
+    mock_read_chapter.assert_not_called()
+    analysis_model.generate_content.assert_not_called()
 
 
 def test_curation_node_accepts_fenced_json_response(base_agent_state):
     llm_provider = MagicMock()
+    db_manager = MagicMock()
     curation_model = llm_provider.get_model.return_value
     curation_model.generate_content.return_value = MockResponse(
         '```json\n{"chosen_variant": "Совет Старейшин"}\n```'
     )
-    base_agent_state["app_context"] = {"llm_provider": llm_provider}
+    base_agent_state["app_context"] = {
+        "llm_provider": llm_provider,
+        "db_manager": db_manager,
+    }
+    base_agent_state["chapters_to_process"] = [
+        {"title": "Chapter 1", "input_path": "ch1.txt", "output_path": "out1.txt"}
+    ]
     base_agent_state["analysis_results"] = [
         {
             "english_term": "Council",
@@ -170,6 +234,11 @@ def test_curation_node_accepts_fenced_json_response(base_agent_state):
             "reasoning": "Conflict resolved by LLM. Chosen from ['Совет', 'Совет Старейшин'].",
         }
     ]
+    db_manager.mark_chapter_stage.assert_any_call(
+        "Chapter 1",
+        "glossary_updated",
+        "done",
+    )
 
 
 def test_curation_node_preserves_category_for_single_option(base_agent_state):
@@ -191,6 +260,37 @@ def test_curation_node_preserves_category_for_single_option(base_agent_state):
             "reasoning": "New term, single option.",
         }
     ]
+
+
+def test_curation_node_skips_when_glossary_checkpoint_done(base_agent_state):
+    llm_provider = MagicMock()
+    base_agent_state["app_context"] = {
+        "llm_provider": llm_provider,
+        "db_manager": MagicMock(),
+    }
+    base_agent_state["chapters_to_process"] = [
+        {"title": "Chapter 1", "input_path": "ch1.txt", "output_path": "out1.txt"}
+    ]
+    base_agent_state["chapter_runs"] = {
+        "Chapter 1": {"stages": {"glossary_updated": "done"}}
+    }
+    base_agent_state["analysis_results"] = [
+        {
+            "english_term": "Council",
+            "russian_translation": "Совет",
+            "category": "Faction",
+        },
+        {
+            "english_term": "Council",
+            "russian_translation": "Совет Старейшин",
+            "category": "Faction",
+        },
+    ]
+
+    result = autonomous_curation_node(base_agent_state)
+
+    assert result == {"unification_verdicts": []}
+    llm_provider.get_model.assert_not_called()
 
 @patch("Perevod.agents.nodes.tool_read_chapter", return_value="English chapter text.")
 @patch("Perevod.agents.nodes.tool_write_chapter")
@@ -245,6 +345,105 @@ def test_translation_node_whole_chapter(
     state["app_context"]["db_manager"].add_or_update_term.assert_called_once_with(
         "Council", "Совет", "Faction"
     )
+    state["app_context"]["db_manager"].mark_chapter_stage.assert_any_call(
+        "Test Chapter",
+        "translation_done",
+        "done",
+    )
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter", return_value="English chapter text.")
+@patch("Perevod.agents.nodes.tool_backup_file", return_value="out.txt.bak")
+@patch("Perevod.agents.nodes.tool_write_chapter")
+@patch("Perevod.agents.nodes.tool_translate_chunk", return_value="Новый перевод.")
+def test_translation_node_backs_up_existing_output_before_overwrite(
+    mock_translate_chunk,
+    mock_write_chapter,
+    mock_backup_file,
+    mock_read_chapter,
+    base_agent_state,
+):
+    state = base_agent_state
+    state["chapters_to_process"] = [
+        {
+            "title": "Test Chapter",
+            "input_path": "in.txt",
+            "output_path": "out.txt",
+            "backup_existing_output": True,
+        }
+    ]
+    state["app_context"]["db_manager"].get_from_cache.return_value = None
+
+    result = translation_node(state)
+
+    assert result["error"] is None
+    mock_backup_file.assert_called_once_with("out.txt")
+    mock_write_chapter.assert_called_once_with("out.txt", "Новый перевод.")
+    assert result["processed_chapters"][0]["output_backup_path"] == "out.txt.bak"
+    state["app_context"]["db_manager"].mark_chapter_stage.assert_any_call(
+        "Test Chapter",
+        "output_written",
+        "done",
+    )
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter", side_effect=["First text.", "Second text."])
+@patch("Perevod.agents.nodes.tool_write_chapter")
+@patch("Perevod.agents.nodes.tool_translate_chunk", side_effect=["Первый.", "Второй."])
+def test_translation_node_uses_chapter_specific_context(
+    mock_translate_chunk, mock_write_chapter, mock_read_chapter, base_agent_state
+):
+    state = base_agent_state
+    state["chapters_to_process"] = [
+        {"title": "Chapter 1", "input_path": "in1.txt", "output_path": "out1.txt"},
+        {"title": "Chapter 2", "input_path": "in2.txt", "output_path": "out2.txt"},
+    ]
+    state["chapter_contexts"] = {
+        "Chapter 1": "Context only for chapter one.",
+        "Chapter 2": "Context only for chapter two.",
+    }
+    state["rag_context"] = "Global fallback context."
+    state["app_context"]["db_manager"].get_from_cache.return_value = None
+
+    result = translation_node(state)
+
+    assert result["error"] is None
+    first_prompt = mock_translate_chunk.call_args_list[0].args[1]
+    second_prompt = mock_translate_chunk.call_args_list[1].args[1]
+    assert "Context only for chapter one." in first_prompt
+    assert "Context only for chapter two." not in first_prompt
+    assert "Context only for chapter two." in second_prompt
+    assert "Context only for chapter one." not in second_prompt
+    assert result["processed_chapters"][0]["relevant_context"] == "Context only for chapter one."
+    assert result["processed_chapters"][1]["relevant_context"] == "Context only for chapter two."
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter", side_effect=["First text.", "Second text."])
+@patch("Perevod.agents.nodes.tool_write_chapter")
+@patch("Perevod.agents.nodes.tool_translate_chunk", side_effect=["Первый.", "Второй."])
+def test_translation_node_does_not_leak_global_context_between_chapters(
+    mock_translate_chunk, mock_write_chapter, mock_read_chapter, base_agent_state
+):
+    state = base_agent_state
+    state["chapters_to_process"] = [
+        {"title": "Chapter 1", "input_path": "in1.txt", "output_path": "out1.txt"},
+        {"title": "Chapter 2", "input_path": "in2.txt", "output_path": "out2.txt"},
+    ]
+    state["chapter_contexts"] = {
+        "Chapter 1": "Context only for chapter one.",
+    }
+    state["rag_context"] = "Global fallback context."
+    state["app_context"]["db_manager"].get_from_cache.return_value = None
+
+    result = translation_node(state)
+
+    assert result["error"] is None
+    first_prompt = mock_translate_chunk.call_args_list[0].args[1]
+    second_prompt = mock_translate_chunk.call_args_list[1].args[1]
+    assert "Context only for chapter one." in first_prompt
+    assert "Global fallback context." not in first_prompt
+    assert "Global fallback context." not in second_prompt
+    assert result["processed_chapters"][1]["relevant_context"] == ""
 
 
 @patch("Perevod.agents.nodes.tool_read_chapter", return_value="English chapter text.")
@@ -379,6 +578,39 @@ def test_translation_cache_key_changes_with_style_guide(
     archaic_key = state["app_context"]["db_manager"].get_from_cache.call_args.args[0]
 
     assert restrained_key != archaic_key
+
+
+@patch("Perevod.agents.nodes.tool_read_chapter", return_value="English chapter text.")
+@patch("Perevod.agents.nodes.tool_write_chapter")
+@patch("Perevod.agents.nodes.tool_translate_chunk", return_value="Переведенный текст главы.")
+def test_translation_cache_key_changes_with_generation_settings(
+    mock_translate_chunk, mock_write_chapter, mock_read_chapter, base_agent_state
+):
+    state = base_agent_state
+    state["chapters_to_process"] = [
+        {"title": "Test Chapter", "input_path": "in.txt", "output_path": "out.txt"}
+    ]
+    state["app_context"]["db_manager"].get_from_cache.return_value = None
+    state["app_context"]["llm_provider"].model_configs = {"translation": "model-a"}
+    state["rag_context"] = "Context A"
+    state["project_settings"] = {
+        "temperature": 0.2,
+        "top_p": 0.8,
+    }
+
+    translation_node(state)
+    conservative_key = state["app_context"]["db_manager"].get_from_cache.call_args.args[0]
+
+    state["app_context"]["db_manager"].get_from_cache.reset_mock()
+    state["project_settings"] = {
+        "temperature": 0.7,
+        "top_p": 0.95,
+    }
+
+    translation_node(state)
+    creative_key = state["app_context"]["db_manager"].get_from_cache.call_args.args[0]
+
+    assert conservative_key != creative_key
 
 
 @patch("Perevod.agents.nodes.tool_read_chapter", return_value="English chapter text.")

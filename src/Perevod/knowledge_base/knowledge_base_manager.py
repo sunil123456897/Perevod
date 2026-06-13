@@ -295,7 +295,7 @@ class KnowledgeBaseManager:
     _REBUILD_BATCH_SIZE = 25
     _REBUILD_BATCH_DELAY_SECONDS = 16
 
-    def __init__(self, project_name, api_key, embedding_model_name, enable_reranker=None):
+    def __init__(self, project_name, api_key, embedding_model_name, enable_reranker=None, db_manager=None):
         _ensure_local_chromadb_available()
         self.project_name = validate_project_name(project_name)
         self.api_key = api_key
@@ -303,6 +303,9 @@ class KnowledgeBaseManager:
         self.enable_reranker = (
             settings.enable_reranker if enable_reranker is None else enable_reranker
         )
+        self.db_manager = db_manager
+        self.needs_rebuild = False
+        self._in_rebuild = False
 
         self.chroma_path = os.path.join(
             PROJECT_ROOT, "_project_files", self.project_name, "chroma_db"
@@ -376,6 +379,15 @@ class KnowledgeBaseManager:
         )
         self.client.delete_collection(name=collection_name)
         self.collection = self._get_or_create_collection(collection_name)
+
+        self.needs_rebuild = True
+        if self.db_manager and not self._in_rebuild:
+            self._in_rebuild = True
+            try:
+                self.rebuild_index_from_db(self.db_manager)
+                self.needs_rebuild = False
+            finally:
+                self._in_rebuild = False
 
     @staticmethod
     def _text_hash(text: str) -> str:

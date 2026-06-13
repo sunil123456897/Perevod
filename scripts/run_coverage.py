@@ -24,6 +24,8 @@ def main() -> int:
             [
                 *DEFAULT_TESTS,
                 "-q",
+                "--basetemp",
+                str(repo_root / ".pytest_tmp_coverage"),
                 "-o",
                 "addopts=-p no:cacheprovider",
                 "-p",

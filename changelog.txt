@@ -1,5 +1,195 @@
 # Changelog
 
+## 2026-05-24 - Workflow stage correctness
+
+- Context retrieval now builds chapter-specific RAG context for every chapter in a batch instead of reusing context from the first chapter.
+- Translation now uses the chapter-specific context when building prompts and cache keys, while keeping the existing global context as a fallback.
+- Analysis results now carry `source_chapter` metadata so reports can identify which chapter reached the analysis stage.
+- Refine now marks only edited chapters as `refined` and returns updated `processed_chapters` for downstream reporting.
+- `translation_report.json` now includes per-chapter `context`, `analysis`, and `refine` stage statuses in addition to translation, judge, and summary.
+- Verification: `python -m ruff check src scripts tests` and `python scripts\run_safe_tests.py` both pass.
+
+## 2026-05-24 - SQLite chapter checkpoints
+
+- Added a project-scoped `chapter_runs` SQLite table for structured chapter checkpoint state.
+- Added `DatabaseManager` APIs for discovering chapters, marking individual stages, recording errors, and reading chapter runs.
+- Workflow startup now records each processable chapter as `discovered`.
+- Context retrieval, analysis, glossary update, translation, output write, judge, refine, summary, and memory update stages now write best-effort per-chapter checkpoints.
+- Checkpoint write failures are warning-only so a transient SQLite problem does not falsely invalidate an already written translation.
+- Verification: `python -m ruff check src scripts tests`, `python scripts\run_safe_tests.py`, and `python -m compileall -q src scripts` all pass.
+
+## 2026-05-24 - Retry planning from SQLite checkpoints
+
+- `--retry-failed` and `--retry-incomplete` can now recover retry candidates from SQLite `chapter_runs` when `translation_report.json` is missing.
+- Downstream failures after `output_written` now mark the chapter for retry while setting `reuse_existing_translation`, so the workflow can continue judge/refine/summary without spending translation API again.
+- Existing strict report validation is preserved: malformed reports still fail instead of being silently ignored.
+- Verification: targeted graph/checkpoint tests and `python -m ruff check src scripts tests` pass.
+
+## 2026-05-24 - Stage gates from SQLite checkpoints
+
+- Graph state now carries SQLite `chapter_runs`, allowing nodes to inspect completed stages during retry/resume.
+- Analysis skips chapters with `analysis_done=done`, avoiding unnecessary analysis model calls.
+- Judge skips chapters with `judge_done=done` and emits a checkpoint-backed passing result for downstream reporting.
+- Summarization skips chapters with both `summary_done=done` and `memory_updated=done`, avoiding duplicate summary model calls and memory writes.
+- Verification: targeted node/graph checkpoint tests and ruff pass.
+
+## 2026-05-24 - Additional safe stage gates
+
+- Context retrieval can reuse an already available chapter context when `context_retrieved=done`, avoiding duplicate retrieval without dropping context.
+- Glossary curation skips when every chapter in the current batch has `glossary_updated=done`, relying on the SQLite-backed project dictionary as the source of truth.
+- Refine skips chapters with `refine_done=done`, marks the processed chapter as checkpoint-reused, and avoids duplicate editor model calls.
+- Verification: targeted node/graph checkpoint tests and ruff pass.
+
+## 2026-05-24 - Persisted chapter context checkpoints
+
+- `chapter_runs` now stores the chapter-specific retrieved context, allowing context resume across separate process runs.
+- `DatabaseManager.update_chapter_context()` persists context after successful retrieval and `get_chapter_runs()` returns it with checkpoint state.
+- Context retrieval now restores persisted context when `context_retrieved=done`, avoiding duplicate retrieval without losing the context needed by translation.
+- Verification: targeted retrieval/database/graph tests and ruff pass.
+
+## 2026-05-24 - Legacy SQLite checkpoint repair
+
+- Database startup now repairs legacy `chapter_runs` tables that predate the persisted `context` column.
+- The repair is intentionally narrow: it only adds `chapter_runs.context TEXT` when the table exists and the column is missing.
+- Verification: targeted legacy-schema/database tests and ruff pass.
+
+## 2026-05-24 - Report stages from SQLite checkpoints
+
+- `translation_report.json` now merges per-chapter SQLite checkpoint evidence into stage statuses.
+- Checkpoint-backed reports can show `glossary`, `output`, and `memory` stages in addition to context, analysis, translation, judge, refine, and summary.
+- Workflow report writing now refreshes `chapter_runs` from SQLite after graph execution, so node-written checkpoints are reflected in the final report instead of the startup snapshot.
+- Refine/editor failures now mark only the `refine` stage as failed in `translation_report.json` instead of also downgrading an already completed `judge` stage.
+- Summary failures now fail the workflow and mark the affected chapter as failed in `translation_report.json`, while preserving the already completed translation/judge stages for safe retry.
+- Report status resolution is now stage-aware for all chapters: any chapter with a `failed` stage is marked `failed`, not only the first chapter parsed from the top-level workflow error text.
+- Failed chapters now surface chapter-specific checkpoint errors in `translation_report.json` (`chapter.error`) when the failure comes from stage checkpoints rather than the single top-level workflow error text.
+- Chapter-level analysis/context retrieval failures are now treated as downstream workflow failures (`RuntimeError`) and reported with `analysis/context = failed` plus `status = failed` for the affected chapters.
+- Global context retrieval failures (`context_errors` with `title="*"`) are now treated as downstream workflow failures as well, with `context = failed` and `status = failed` for affected report chapters instead of warning-only success.
+- `retry_failed` now reuses existing translated output for failed chapters caused by downstream analysis/context/retrieval stages, avoiding unnecessary translation API calls after non-translation failures.
+- Stage merging now preserves current-run failures over stale checkpoint `done`: runtime `context/analysis/summary` errors re-apply `failed` after checkpoint stage merge so report stages cannot be silently downgraded to `done`.
+- Stage inference now has an error-text fallback for downstream failures (`Analysis failed...`, `Context retrieval failed...`, `Summary failed...`) so the corresponding chapter stage remains `failed` even if explicit per-stage error arrays are missing.
+- Report `stages` schema is now consistent for non-skipped chapters with explicit `glossary`, `output`, and `memory` keys alongside `context/analysis/translation/judge/refine/summary`, improving deterministic parsing and diagnostics.
+- Failed chapters without a detailed error payload now receive a deterministic fallback `chapter.error` derived from the first failed stage (for example, `Failed stage: judge`) instead of `null`.
+- `retry_incomplete` now treats stage `not_started`/non-`done` states as incomplete even without warnings, with backward-compatible handling for legacy reports that only have `translation/judge/summary` stage keys.
+- `retry_incomplete` now explicitly ignores report chapters with `status` starting with `skipped`, preventing false-positive retries of previously skipped chapters whose stages are `skipped`.
+- `retry_incomplete` stage checks are now adaptive to hybrid report schemas: only stage keys that are actually present are required, so missing newer keys (`glossary/output/memory`) in older reports no longer trigger false-positive retries.
+- SQLite-checkpoint retry selection now mirrors report logic for `skipped*` statuses: `_should_retry_checkpoint_run` ignores skipped chapter runs, preventing false-positive `retry_incomplete` processing when report file is missing.
+- SQLite-checkpoint incomplete checks are now adaptive to hybrid checkpoint schemas: missing newer checkpoint keys no longer trigger false-positive retries; only present stage keys are required, with legacy fallback to `translation/judge/summary`.
+- SQLite-checkpoint retry adapters now preserve `glossary` and `output` stage evidence, so `output_written=failed` cannot be lost when retrying without `translation_report.json`.
+- Report chapter status now resolves to `translated` when checkpoint stages confirm `translation=done` even if `processed_chapters` is empty in final state, preventing false `pending` statuses after checkpoint-driven resumes.
+- Retry planning no longer reuses an existing output file when report/checkpoint stage evidence says `output=failed`, preventing a stale or partial file from being treated as safe translated output.
+- Verification: graph runner/database/retrieval targeted tests, `python -m ruff check src scripts tests`, `python -m compileall -q src scripts`, and `python scripts\run_safe_tests.py` pass.
+
+## 2026-05-24 - Resume-safe judge/refine continuity
+
+- Fixed report counter correctness for checkpoint-driven resumes: when runtime `processed_chapters` is empty, `processed_count/processed_chapters` now fall back to chapters with `translation=done` in stage evidence.
+- Added checkpoint retry safety for judge/refine continuity: retry chapters loaded from SQLite checkpoints now set `force_rejudge` when `judge=done` but judge blocking details are unavailable, preventing silent skip of required refine.
+- `judge_node` now honors `force_rejudge`: it re-runs judge instead of blindly skipping on `judge_done`, preserving downstream refine correctness without redoing translation.
+- Retry planning from `translation_report.json` now preserves known chapter `blocking_issues` when reusing existing translation output, so downstream refine requirements are not silently dropped.
+- `judge_node` checkpoint-skip path no longer clears known chapter blockers: when `blocking_issues` are already present in chapter state, they are kept and propagated to `judge_results`/global `blocking_issues`.
+- Report summary-stage inference now ignores retrieval-memory entries in `chapter_summaries` (e.g. `{"content", "chapter_index", "title"}`) and only treats real summarization artifacts (`summary/key_events/active_characters`) or checkpoint reuse as `summary=done`.
+- Translation context fallback is now chapter-safe: in multi-chapter runs, a chapter without its own `chapter_contexts[title]` no longer receives global `rag_context` (first-chapter context), preventing cross-chapter context leakage.
+- SQLite `chapter_runs` now stores structured judge artifacts in `judge_result_json` (with legacy schema auto-repair), and `DatabaseManager.get_chapter_runs()` exposes them as `judge_result`.
+- `judge_node` now persists per-chapter judge payloads to SQLite after successful evaluation and can reuse checkpointed `blocking_issues/pass_check/suggestions/severity/score` when `judge_done=done`.
+- Retry planning from SQLite checkpoints now carries checkpointed `blocking_issues` through `_checkpoint_run_to_report_chapter`, preventing forced rejudge when judge evidence is already available and preserving chapter-level refine requirements.
+- Report status/QA fields now consume checkpointed `judge_result` as fallback when runtime `judge_results` are missing: checkpoint-only chapters with `translation=done` + blocking issues are reported as `qa_failed` (not false `translated`) with `judge_pass_check/judge_score/judge_severity/quality_suggestions`.
+- SQLite `chapter_runs` now stores structured refine artifacts in `refine_result_json` (with legacy schema auto-repair), and `DatabaseManager.get_chapter_runs()` exposes them as `refine_result`.
+- `refine_node` now persists per-chapter refine payloads after successful correction and restores checkpointed refine metadata when `refine_done=done`, without re-calling the editor model.
+- `translation_report.json` now exposes refine metadata (`refined`, `refine_checkpoint_reused`, `refinement_count`, `refine_issues_fixed`) using runtime or checkpoint evidence, improving post-failure diagnostics and resume visibility.
+- SQLite `chapter_runs` now stores structured summary artifacts in `summary_result_json` (with legacy schema auto-repair), and `DatabaseManager.get_chapter_runs()` exposes them as `summary_result`.
+- `summarization_node` now persists per-chapter summary payloads including `chapter_index` and restores checkpointed summary metadata when `summary_done/memory_updated=done`, without re-calling the summarization model.
+- `translation_report.json` now exposes summary metadata (`summary_checkpoint_reused`, `summary`, `summary_key_events`, `summary_active_characters`, `summary_chapter_index`) using runtime or checkpoint evidence.
+- SQLite-only retry selection now treats checkpointed `judge_result.blocking_issues` as retry-worthy QA blockers even when `chapter_runs.status` is still a stage name such as `judge_done`; the checkpoint-to-report adapter also normalizes those chapters to `qa_failed`.
+- Retry planning now forces re-judge when a checkpoint has stale judge blockers and `refine=done`: after editor correction, the old judge payload is no longer treated as final evidence, preventing retry loops or false QA failure after a crash before re-judge.
+- Report-based `--retry-failed` now treats non-empty chapter `blocking_issues` as retry-worthy even if a legacy or partially inconsistent report still says `status=translated`, preventing QA-blocked chapters from being silently skipped.
+- `refine_node` no longer writes editor-corrected text to the translation cache before the follow-up judge pass approves it; QA-approved caching remains centralized in `judge_node`.
+- Translation cache keys now include an explicit translation prompt version and normalized generation settings (`temperature`, `top_p`) in addition to model/input/dictionary/context/style data, so prompt or sampling changes invalidate stale cache entries.
+- Workflow startup now validates `input_dir`/`output_dir` before creating output directories, acquiring locks, opening databases, or calling Gemini: identical directories, nested input/output directories, and symlink components are rejected.
+- `generate_text()` now detects `GeminiModelAdapter` and avoids adding a second outer retry/rate-limit loop around it, so transient errors cannot multiply Gemini calls beyond the gateway adapter's own retry budget.
+- Agent nodes, simple translator, and doctor live API checks now route text generation through the shared `generate_text()` helper instead of calling `generate_content` directly, keeping timeout/retry/rate-limit behavior centralized while preserving prompts.
+- Doctor model-profile checks now warn about locally untracked Gemini/embedding model names without making live API calls, making budget/rate/capability uncertainty visible.
+- Doctor model-profile checks now warn when a known embedding model is assigned to a text task, or a known text model is assigned to embedding, catching category mistakes offline.
+- Gemini `embedContent` calls now go through `GeminiEmbeddingAdapter` in the LLM provider layer, centralizing embedding timeout, retry classification, usage reservations, and safe logging outside the Chroma/cache manager.
+- Dictionary self-learning conflicts are now stored as SQLite-backed review proposals with `status/source_chapter/reason` metadata instead of silently overwriting approved terms; `translation_report.json` surfaces per-chapter and top-level `dictionary_conflicts` plus warnings.
+- Rolling chapter memory no longer writes fake zero-vector embeddings to ChromaDB; summary text is still persisted in SQLite checkpoints for resume, while ChromaDB receives documents without manual embeddings so the configured embedding function can build the searchable index.
+- CI now explicitly compiles `src` and `scripts` on Windows/Ubuntu and runs safe tests with a placeholder API key plus plugin autoload disabled, keeping live Gemini calls out of the default verification path.
+- CI coverage smoke now runs `scripts/run_coverage.py` directly instead of wrapping it in `coverage run`, preserving the script-managed coverage data instead of producing a misleading zero-coverage report.
+- GUI translation progress now uses an explicit workflow-progress adapter for `(stage, current, total, message)` callbacks and shows the final `translation_report.json` path in success/error status text.
+- Existing output chapters are now backed up before any overwrite/retranslation write, with sibling `.bak` files and `output_backup_path` surfaced in `translation_report.json`.
+- GUI overwrite mode is now off by default and requires an explicit confirmation dialog before starting translation, reducing accidental bulk retranslation.
+- GUI completion/error status now reads `translation_report.json` and shows a compact chapter summary with processed/failed/qa_failed/warning counts and first problematic chapter titles.
+- GUI now has an `Отчет` action that reads the current output directory's `translation_report.json` and shows problematic chapters with failed stages, warnings, blocking issues, and errors.
+- Added an ADR that records current checkpoint/resume, cache, memory, LLM gateway, and file-write reliability invariants.
+- README now matches the current workflow behavior for full per-stage report fields, dictionary conflict reporting, QA-approved cache writes, path validation, and local safe verification commands.
+- Added regression coverage for:
+  - report `processed_count` fallback from checkpoint translation stage,
+  - `force_rejudge` propagation in retry-from-checkpoint flow,
+  - judge re-check behavior when `force_rejudge=True`,
+  - preserving known blockers on checkpoint judge-skip,
+  - retry-failed report flow surfacing preserved blockers as `qa_failed` with chapter-level `blocking_issues`,
+  - preventing false `summary=done` from retrieval-memory records,
+  - preventing global-context leakage into another chapter when chapter-specific context is missing,
+  - preventing existing-output reuse after failed output-write stage,
+  - report-based retry planning refusing existing-output reuse when `translation=done` but `output=failed`.
+  - report-based `--retry-incomplete` reusing existing output without backup/rewrite when `output=done` and only downstream `summary/memory` stages remain incomplete.
+  - preserving failed output-write stage evidence during SQLite-only retry planning.
+  - direct checkpoint-to-report adapter coverage for `glossary` and `output` stage preservation.
+  - full stage-key schema in failed workflow reports, covering both processed and failed chapters.
+  - checkpoint judge-result roundtrip and retry propagation from SQLite,
+  - checkpoint-driven `qa_failed` report status without runtime judge payload,
+  - checkpoint refine-result roundtrip, restore-on-skip, and report emission,
+  - checkpoint summary-result roundtrip, restore-on-skip, and report emission,
+  - retry from SQLite-only checkpoints with judge blockers and no `translation_report.json`,
+  - retry after `refine_done` but before re-judge, ensuring stale judge blockers trigger `force_rejudge`.
+  - retry-failed selection from legacy reports where `status=translated` but `blocking_issues` are present.
+  - preventing pre-QA cache writes from editor/refine corrections.
+  - cache invalidation when prompt version or generation settings change.
+  - path validation for identical input/output directories, nested input/output directories, and symlink output directories where supported by the OS.
+  - preventing nested retry multiplication when translation goes through `GeminiModelAdapter`.
+  - agent-node, translator, and doctor generation calls continuing to pass through the shared LLM helper.
+  - doctor model-profile warnings for untracked models without live API usage.
+  - doctor model-profile warnings for incompatible text/embedding model categories.
+  - API retry classification treating explicit schema/response-schema failures as non-retryable even when wrapped in a 5xx-looking error.
+  - Gemini gateway wrapping final external text/embedding failures in structured, sanitized errors while preserving local daily-budget failures.
+  - `translation_report.json` surfacing structured Gemini gateway error metadata at run and chapter level.
+  - GUI report details displaying structured Gemini gateway diagnostics for problematic chapters.
+  - CLI failure path logging `translation_report.json` when workflow returns an error or raises after writing a report.
+  - GUI exception path showing the output report path and summary when workflow raises after writing `translation_report.json`.
+  - context/analysis/judge/refine/summary caught Gemini API failures preserving structured metadata into workflow/stage errors and chapter report diagnostics.
+  - non-fatal semantic context retrieval failures now surface as per-chapter `context_warnings` without falsely marking the context stage failed when lexical fallback succeeds.
+  - `--retry-incomplete` now treats `context_warnings` as retry-worthy even if an older or hand-edited report has no string `warnings`.
+  - GUI report summary/details now count and display structured `context_warnings` directly, so fallback context degradation remains visible in desktop mode.
+  - GUI report summary now protects against stale `warning_count` by recomputing chapter warning/context-warning totals for display.
+  - Context retrieval now records a chapter-level `context_errors` failure when both semantic lore search and lexical fallback fail, preventing a false `context=done` report stage.
+  - Workflow report/downstream context failure handling now tolerates legacy non-dict `context_errors` entries by treating them as global context failures instead of crashing before `translation_report.json` is written.
+  - Workflow report/downstream handling now tolerates legacy non-dict `analysis_errors` and `summary_errors` entries, extracting chapter titles from error text when possible so stage failures stay chapter-scoped instead of crashing or becoming false success.
+  - `qa_failed` chapter reports now include a chapter-level `error` derived from remaining blocking issues, including checkpoint-only judge results, so reports do not show a failed status with an empty cause.
+  - Workflow completion now treats remaining blocking issues from per-chapter `processed_chapters`, `judge_results`, or SQLite `chapter_runs` as fatal QA failure even when top-level `blocking_issues` is missing.
+  - Workflow report building now lets the current judge payload clear stale pre-refine chapter blockers, preventing a false `qa_failed` report after a successful rejudge.
+  - Workflow report stage inference now uses the same effective blocking issues as chapter status, so a successful rejudge no longer leaves stale `refine=needed` in `translation_report.json`.
+  - Judge results with `pass_check=false` but no explicit `blocking_issues` now create a visible QA blocker instead of reporting the chapter as translated.
+  - SQLite checkpoint retry/report adapters now apply the same `pass_check=false` QA blocker rule, preventing false success when retrying without `translation_report.json`.
+  - SQLite checkpoint report adapters now mark `refine=needed` when checkpointed judge evidence has unresolved QA blockers and no refine checkpoint yet.
+  - Report-based retry selection now treats `judge_pass_check=false` as retry-worthy even when legacy reports have empty `blocking_issues` and `status=translated`.
+  - Workflow quality gate now ignores stale top-level `blocking_issues` after a current passing judge result, preventing false QA failure after successful rejudge.
+  - Workflow quality gate keeps top-level `blocking_issues` fatal in mixed batches when passing judge results do not cover every processable chapter.
+  - Refine node now clears per-chapter and top-level blocking issues after a successful editor correction, preserving the old issues in `refine_result.issues_fixed` so the follow-up judge pass starts from clean state.
+  - Gemini embedding gateway behavior for timeout conversion, retryable errors, usage reservation release/record, and non-retryable quota errors.
+  - preserving approved dictionary terms while recording conflicting self-learning candidates for review and report diagnostics.
+  - avoiding zero-vector embeddings for `chapter_memory` entries.
+  - CI/default docs reflecting the current safe verification path and cache/report semantics.
+  - CI coverage smoke command preserving real coverage data.
+  - GUI workflow progress formatting and report-path visibility after translation.
+  - backup creation before output overwrite and report visibility for `output_backup_path`.
+  - GUI overwrite confirmation before starting a bulk retranslation.
+  - GUI report-summary formatting for completion/error diagnostics.
+  - GUI report details viewer for problematic chapters.
+  - checkpoint helper best-effort persistence contract, including per-chapter stage lookup, scoped artifact lookup, delegated DB writes, and warning-only failure handling.
+  - checkpoint helper no-op branches for missing db manager/title/method, preventing future regressions from turning optional checkpoint persistence into workflow failure.
+  - safe-test and coverage-smoke inclusion for checkpoint helper regressions via `scripts/run_safe_tests.py`.
+  - current reliability invariants documented in ADR form.
+  - preventing false summary/memory success and unnecessary summary API calls when the knowledge base manager is unavailable.
+- Verification: `python -m pytest tests/test_06_judge_node.py -q -o addopts='' -p no:cacheprovider`, `python -m pytest tests/test_graph_runner.py -q -o addopts='' -p no:cacheprovider`, `python -m pytest tests/test_checkpoints.py -q -o addopts='' -p no:cacheprovider`, `python -m ruff check src scripts tests`, `python -m compileall -q src scripts`, `python scripts\run_safe_tests.py`.
+
 ## Версия 2.1 (Стабилизация) - Дата: [Текущая дата]
 
 Это обновление фокусируется на стабилизации кодовой базы, исправлении критических ошибок и приведении документации в соответствие с реальным функционалом.

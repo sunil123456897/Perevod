@@ -3,7 +3,10 @@ from dataclasses import dataclass
 
 GEMINI_FLASH = "gemini-3-flash-preview"
 GEMINI_FLASH_LITE = "gemini-3.1-flash-lite-preview"
+GEMINI_35_FLASH = "gemini-3.5-flash"
 GEMINI_EMBEDDING = "gemini-embedding-2"
+GEMMA_31B = "gemma-4-31b-it"
+GEMMA_26B = "gemma-4-26b-a4b-it"
 
 
 @dataclass(frozen=True)
@@ -21,10 +24,28 @@ MODEL_REGISTRY: dict[str, GeminiModelSpec] = {
         daily_limit=20,
         min_interval_seconds=12.0,
     ),
+    GEMINI_35_FLASH: GeminiModelSpec(
+        name=GEMINI_35_FLASH,
+        category="text",
+        daily_limit=20,
+        min_interval_seconds=12.0,
+    ),
     GEMINI_FLASH_LITE: GeminiModelSpec(
         name=GEMINI_FLASH_LITE,
         category="text",
         daily_limit=500,
+        min_interval_seconds=4.0,
+    ),
+    GEMMA_31B: GeminiModelSpec(
+        name=GEMMA_31B,
+        category="text",
+        daily_limit=1500,
+        min_interval_seconds=4.0,
+    ),
+    GEMMA_26B: GeminiModelSpec(
+        name=GEMMA_26B,
+        category="text",
+        daily_limit=1500,
         min_interval_seconds=4.0,
     ),
     GEMINI_EMBEDDING: GeminiModelSpec(
@@ -37,7 +58,7 @@ MODEL_REGISTRY: dict[str, GeminiModelSpec] = {
 DEFAULT_TASK_MODELS = {
     "analysis": GEMINI_FLASH_LITE,
     "curation": GEMINI_FLASH_LITE,
-    "translation": GEMINI_FLASH,
+    "translation": GEMMA_31B,
     "qa": GEMINI_FLASH_LITE,
     "summarization": GEMINI_FLASH_LITE,
 }
@@ -45,6 +66,9 @@ DEFAULT_TASK_MODELS = {
 AVAILABLE_TEXT_MODELS = [
     GEMINI_FLASH,
     GEMINI_FLASH_LITE,
+    GEMINI_35_FLASH,
+    GEMMA_31B,
+    GEMMA_26B,
 ]
 
 LEGACY_FREE_TIER_REPLACEMENTS = {

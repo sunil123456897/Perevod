@@ -1,6 +1,7 @@
 # tests/test_11_retrieval_node.py
 from unittest.mock import MagicMock, patch
 from Perevod.agents.nodes import context_retrieval_node
+from Perevod.utils.api_errors import ApiErrorInfo, GeminiAPIError
 
 def test_context_retrieval_node_aggregates_lore_and_memory():
     # Setup
@@ -146,6 +147,54 @@ def test_context_retrieval_node_uses_lexical_fallback_when_semantic_query_fails(
     assert "Thunder Lotus seed feeds the strange thunder spirit." in rag_context
     assert "Old chapter memory" not in rag_context
     assert result["context_errors"] == []
+    assert result["context_warnings"][0]["title"] == "Ch 585"
+    assert result["context_warnings"][0]["scope"] == "semantic_lore"
+    assert "embedding quota exhausted" in result["context_warnings"][0]["error"]
+
+
+def test_context_retrieval_node_reports_lore_error_when_semantic_and_fallback_fail():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    db_manager = MagicMock()
+
+    mock_collection.count.return_value = 3
+    mock_collection.query.side_effect = RuntimeError("embedding quota exhausted")
+    mock_collection.get.side_effect = [
+        RuntimeError("lexical fallback unavailable"),
+        {"documents": [], "metadatas": []},
+    ]
+
+    state = {
+        "app_context": {
+            "kb_manager": mock_kb_manager,
+            "db_manager": db_manager,
+        },
+        "chapters_to_process": [
+            {"title": "Ch 585", "input_path": "input/ch585.txt"}
+        ],
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter", return_value="Chapter text"):
+        result = context_retrieval_node(state)
+
+    assert result["context_warnings"][0]["scope"] == "semantic_lore"
+    assert result["context_errors"] == [
+        {
+            "title": "Ch 585",
+            "scope": "lexical_lore",
+            "error": "lexical fallback unavailable",
+        }
+    ]
+    db_manager.mark_chapter_stage.assert_called_once_with(
+        "Ch 585",
+        "context_retrieved",
+        "failed",
+        error="lexical fallback unavailable",
+    )
+    db_manager.update_chapter_context.assert_not_called()
 
 
 def test_context_retrieval_node_keeps_lore_with_missing_metadata():
@@ -284,8 +333,225 @@ def test_context_retrieval_node_reports_memory_errors():
     assert "Error retrieving chapter memory." in result["rag_context"]
     assert result["context_errors"] == [
         {
-            "title": "*",
+            "title": "Ch 586",
             "scope": "chapter_memory",
             "error": "memory db locked",
         }
     ]
+
+
+def test_context_retrieval_node_preserves_gemini_error_metadata_for_memory_errors():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    mock_kb_manager.reranker = None
+
+    mock_collection.count.return_value = 0
+    mock_collection.get.side_effect = GeminiAPIError(
+        model_name="gemini-embedding-2",
+        operation="embedContent",
+        info=ApiErrorInfo(
+            category="quota",
+            retryable=False,
+            status_code=429,
+            message="quota exhausted",
+        ),
+        original_error=RuntimeError("quota exhausted"),
+    )
+
+    state = {
+        "app_context": {"kb_manager": mock_kb_manager},
+        "chapters_to_process": [
+            {"title": "Ch 586", "input_path": "input/ch586.txt"}
+        ],
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter", return_value="Chapter text"):
+        result = context_retrieval_node(state)
+
+    context_error = result["context_errors"][0]
+    assert context_error["title"] == "Ch 586"
+    assert context_error["scope"] == "chapter_memory"
+    assert context_error["error_category"] == "quota"
+    assert context_error["error_retryable"] is False
+    assert context_error["error_status_code"] == 429
+    assert context_error["error_operation"] == "embedContent"
+    assert context_error["error_model"] == "gemini-embedding-2"
+
+
+def test_context_retrieval_node_builds_context_for_each_chapter():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    mock_kb_manager.reranker = None
+
+    mock_collection.count.return_value = 2
+    mock_collection.query.side_effect = [
+        {
+            "documents": [["Lotus lore for chapter one"]],
+            "metadatas": [[{"source": "bible", "name": "Lotus"}]],
+            "ids": [["lore1"]],
+        },
+        {
+            "documents": [["Sword lore for chapter two"]],
+            "metadatas": [[{"source": "bible", "name": "Sword"}]],
+            "ids": [["lore2"]],
+        },
+    ]
+    mock_collection.get.return_value = {"documents": [], "metadatas": []}
+
+    state = {
+        "app_context": {"kb_manager": mock_kb_manager},
+        "chapters_to_process": [
+            {"title": "Chapter 1", "input_path": "input/ch1.txt"},
+            {"title": "Chapter 2", "input_path": "input/ch2.txt"},
+        ],
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter") as mock_read:
+        mock_read.side_effect = [
+            "Lotus appears in chapter one.",
+            "Sword appears in chapter two.",
+        ]
+        result = context_retrieval_node(state)
+
+    assert mock_collection.query.call_count == 2
+    assert result["chapter_contexts"]["Chapter 1"] != result["chapter_contexts"]["Chapter 2"]
+    assert "Lotus lore for chapter one" in result["chapter_contexts"]["Chapter 1"]
+    assert "Sword lore for chapter two" in result["chapter_contexts"]["Chapter 2"]
+
+
+def test_context_retrieval_node_marks_stage_per_chapter():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    mock_collection.count.return_value = 0
+    mock_collection.get.return_value = {"documents": [], "metadatas": []}
+    db_manager = MagicMock()
+
+    state = {
+        "app_context": {
+            "kb_manager": mock_kb_manager,
+            "db_manager": db_manager,
+        },
+        "chapters_to_process": [
+            {"title": "Chapter 1", "input_path": "input/ch1.txt"},
+            {"title": "Chapter 2", "input_path": "input/ch2.txt"},
+        ],
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter", return_value="Chapter text"):
+        context_retrieval_node(state)
+
+    assert db_manager.mark_chapter_stage.call_args_list[0].args == (
+        "Chapter 1",
+        "context_retrieved",
+        "done",
+    )
+    assert db_manager.mark_chapter_stage.call_args_list[1].args == (
+        "Chapter 2",
+        "context_retrieved",
+        "done",
+    )
+
+
+def test_context_retrieval_node_reuses_existing_context_when_checkpoint_done():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    db_manager = MagicMock()
+
+    state = {
+        "app_context": {
+            "kb_manager": mock_kb_manager,
+            "db_manager": db_manager,
+        },
+        "chapters_to_process": [
+            {"title": "Chapter 1", "input_path": "input/ch1.txt"},
+        ],
+        "chapter_contexts": {"Chapter 1": "Previously retrieved context."},
+        "chapter_runs": {
+            "Chapter 1": {"stages": {"context_retrieved": "done"}},
+        },
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter") as mock_read:
+        result = context_retrieval_node(state)
+
+    assert result["rag_context"] == "Previously retrieved context."
+    assert result["chapter_contexts"] == {"Chapter 1": "Previously retrieved context."}
+    assert result["context_errors"] == []
+    mock_read.assert_not_called()
+    mock_collection.query.assert_not_called()
+    db_manager.mark_chapter_stage.assert_not_called()
+
+
+def test_context_retrieval_node_reuses_persisted_checkpoint_context():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    db_manager = MagicMock()
+
+    state = {
+        "app_context": {
+            "kb_manager": mock_kb_manager,
+            "db_manager": db_manager,
+        },
+        "chapters_to_process": [
+            {"title": "Chapter 1", "input_path": "input/ch1.txt"},
+        ],
+        "chapter_runs": {
+            "Chapter 1": {
+                "stages": {"context_retrieved": "done"},
+                "context": "Persisted context from SQLite.",
+            },
+        },
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter") as mock_read:
+        result = context_retrieval_node(state)
+
+    assert result["rag_context"] == "Persisted context from SQLite."
+    assert result["chapter_contexts"] == {"Chapter 1": "Persisted context from SQLite."}
+    mock_read.assert_not_called()
+    mock_collection.query.assert_not_called()
+    db_manager.mark_chapter_stage.assert_not_called()
+
+
+def test_context_retrieval_node_persists_retrieved_context():
+    mock_kb_manager = MagicMock()
+    mock_collection = MagicMock()
+    mock_kb_manager.collection = mock_collection
+    mock_collection.count.return_value = 0
+    mock_collection.get.return_value = {"documents": [], "metadatas": []}
+    db_manager = MagicMock()
+
+    state = {
+        "app_context": {
+            "kb_manager": mock_kb_manager,
+            "db_manager": db_manager,
+        },
+        "chapters_to_process": [
+            {"title": "Chapter 1", "input_path": "input/ch1.txt"},
+        ],
+        "rag_context": "",
+        "chapter_summaries": [],
+    }
+
+    with patch("Perevod.agents.nodes.tool_read_chapter", return_value="Chapter text"):
+        result = context_retrieval_node(state)
+
+    db_manager.update_chapter_context.assert_called_once_with(
+        "Chapter 1",
+        result["chapter_contexts"]["Chapter 1"],
+    )

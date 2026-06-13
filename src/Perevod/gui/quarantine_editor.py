@@ -7,7 +7,8 @@ gui_logger = logging.getLogger("NovelTranslator.GUI")
 
 
 class QuarantineEditorWindow(TabbedPaginatedEditor):
-    def __init__(self, master, db_manager):
+    def __init__(self, master, db_manager, kb_manager=None):
+        self.kb_manager = kb_manager
         super().__init__(master, "Редактор Карантина", db_manager)
 
         self.search_var.trace_add("write", lambda *args: self._load_data())
@@ -93,7 +94,17 @@ class QuarantineEditorWindow(TabbedPaginatedEditor):
 
     def _restore_term(self, term_id):
         try:
-            self.db_manager.restore_term(term_id)
+            details = self.db_manager.restore_term(term_id)
+            kb_manager = getattr(self, "kb_manager", None)
+            if details and kb_manager:
+                eng_term = details["english_term"]
+                rus_term = details["russian_term"]
+                text_to_embed = f"Dictionary Term. Term: {eng_term}. Translation: {rus_term}."
+                kb_manager.add_or_update_entries(
+                    documents=[text_to_embed],
+                    metadatas=[{"source": "dictionary", "name": eng_term}],
+                    ids=[f"dict_{eng_term}"]
+                )
             gui_logger.info(f"Термин с ID {term_id} восстановлен из карантина.")
             self._load_data()
         except Exception as e:
@@ -108,7 +119,11 @@ class QuarantineEditorWindow(TabbedPaginatedEditor):
         ):
             return
         try:
-            self.db_manager.delete_from_quarantine(term_id)
+            details = self.db_manager.delete_from_quarantine(term_id)
+            kb_manager = getattr(self, "kb_manager", None)
+            if details and kb_manager:
+                eng_term = details["english_term"]
+                kb_manager.delete_entries(ids=[f"dict_{eng_term}"])
             gui_logger.info(f"Термин с ID {term_id} удален из карантина.")
             self._load_data()
         except Exception as e:

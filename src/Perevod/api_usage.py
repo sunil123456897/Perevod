@@ -43,12 +43,18 @@ class ApiUsageTracker:
         self.date_provider = date_provider
         self.time_provider = time_provider
         self.reservation_ttl_seconds = reservation_ttl_seconds
+        self._last_cleanup_time = 0.0
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def _ensure_table(self) -> None:
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS api_usage (
@@ -110,7 +116,12 @@ class ApiUsageTracker:
             )
 
     def _cleanup_expired_reservations(self, conn: sqlite3.Connection) -> None:
-        expires_before = float(self.time_provider()) - self.reservation_ttl_seconds
+        current_time = float(self.time_provider())
+        if current_time - self._last_cleanup_time < 60.0:
+            return
+        self._last_cleanup_time = current_time
+
+        expires_before = current_time - self.reservation_ttl_seconds
         conn.execute(
             "DELETE FROM api_usage_reservations WHERE created_at <= ?",
             (expires_before,),
@@ -190,7 +201,7 @@ class ApiUsageTracker:
         usage_date = self.date_provider().isoformat()
         reservation_id = uuid.uuid4().hex
         self._ensure_table()
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._cleanup_expired_reservations(conn)
             used_calls = conn.execute(
@@ -244,7 +255,7 @@ class ApiUsageTracker:
 
         usage_date = self.date_provider().isoformat()
         self._ensure_table()
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._cleanup_expired_reservations(conn)
             used_calls = conn.execute(
@@ -277,7 +288,7 @@ class ApiUsageTracker:
 
         usage_date = self.date_provider().isoformat()
         self._ensure_table()
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._cleanup_expired_reservations(conn)
             reservation_consumed = self._consume_reservation(
@@ -314,7 +325,7 @@ class ApiUsageTracker:
 
         usage_date = self.date_provider().isoformat()
         self._ensure_table()
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._cleanup_expired_reservations(conn)
             reservation_consumed = self._consume_reservation(
@@ -339,7 +350,7 @@ class ApiUsageTracker:
         usage_date = self.date_provider().isoformat()
         self._ensure_table()
         usage_expression = "calls + reserved" if include_reserved else "calls"
-        with closing(sqlite3.connect(self.db_path)) as conn:
+        with closing(self._connect()) as conn:
             conn.execute("BEGIN IMMEDIATE")
             self._cleanup_expired_reservations(conn)
             used_calls = conn.execute(
