@@ -1,4 +1,9 @@
-from Perevod.utils.translation_quality import evaluate_translation_sanity, merge_severity
+from Perevod.utils.translation_quality import (
+    _missing_required_terms,
+    _russian_term_occurs_in_text,
+    evaluate_translation_sanity,
+    merge_severity,
+)
 
 
 def test_translation_sanity_rejects_empty_output():
@@ -177,4 +182,80 @@ def test_translation_sanity_accepts_clean_prose_without_style_markers():
     assert result.pass_check is True
     assert result.style_metrics["narrative_dash_per_1k"] <= 3.0
     assert result.style_metrics["gerund_per_1k"] <= 2.5
+
+
+# ---------------------------------------------------------------------------
+# Регрессионные тесты для ложных срабатываний QA на канонических терминах.
+# Воспроизводят реальные случаи из перевода глав 622-709: термин переведён
+# корректно, но QA-гейт ложно блокировал главу из-за грубого стемминга
+# и/или требования строгого порядка слов в многословных терминах.
+# ---------------------------------------------------------------------------
+
+
+def test_russian_term_matches_reordered_multiword_term():
+    # "душа зарождающейся" — нормальная русская перестановка слов.
+    # Раньше матч ломался из-за требования строгого порядка "зарождающаяся душа".
+    assert _russian_term_occurs_in_text(
+        "Зарождающаяся Душа", "сила души зарождающейся была подавляющей"
+    ) is True
+
+
+def test_russian_term_matches_declined_multiword_term():
+    # Падежные формы: "Зарождающейся Душе" (дательный).
+    assert _russian_term_occurs_in_text(
+        "Зарождающаяся Душа", "он обратился к Зарождающейся Душе."
+    ) is True
+
+
+def test_russian_term_rejects_genuinely_absent_term():
+    # Реальное отсутствие термина — не должно давать ложный позитив.
+    assert _russian_term_occurs_in_text(
+        "Зарождающаяся Душа", "Лу Сюань шёл по тропе и смотрел на небо."
+    ) is False
+
+
+def test_russian_term_matches_single_declined_word():
+    # Однословный термин в падежной форме.
+    assert _russian_term_occurs_in_text("Духовная жидкость", "налил духовной жидкости") is True
+
+
+def test_missing_required_terms_respects_source_gate():
+    # Термин, чьей английской формы нет в исходнике, не должен флагаться
+    # (гейт по "english term in original_text").
+    missing = _missing_required_terms(
+        "The cultivator walked along the path.",
+        "Культиватор шёл по тропе.",
+        {"Nascent Soul": "Зарождающаяся Душа"},  # нет в исходнике
+    )
+    assert missing == []
+
+
+def test_missing_required_terms_flags_real_omission():
+    # Английский термин есть в исходнике, русский в переводе отсутствует —
+    # это настоящее упущение, должно флагаться.
+    missing = _missing_required_terms(
+        "He reached the Nascent Soul stage.",
+        "Он достиг стадии великого прозрения.",  # "зарождающаяся душа" нет
+        {"Nascent Soul": "Зарождающаяся Душа"},
+    )
+    assert any("Nascent Soul" in m for m in missing)
+
+
+def test_translation_sanity_accepts_multiword_term_with_word_reordering():
+    # End-to-end: исходник + корректный перевод с перестановкой слов.
+    # Ранее давало ложный blocking issue "Canonical dictionary terms are missing".
+    original = "The Nascent Soul cultivator observed the Thunderfire Star."
+    translated = (
+        "Сила души зарождающейся у этого культиватора была необычной, "
+        "и он наблюдал за сиянием громового огня в небесах."
+    )
+
+    result = evaluate_translation_sanity(
+        original,
+        translated,
+        {"Nascent Soul": "Зарождающаяся Душа", "Thunderfire Star": "Громовой Огонь"},
+    )
+
+    assert result.pass_check is True
+    assert result.blocking_issues == []
 

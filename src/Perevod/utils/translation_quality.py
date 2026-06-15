@@ -3,6 +3,23 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+# pymorphy3 даёт надёжные леммы для русских форм, включая беглые гласные
+# (огонь/огня, день/дня, конец/конца) и причастия (зарождающаяся/зарождающейся).
+# MorphAnalyzer тяжёлый при создании (~80 МБ словарь), поэтому грузим лениво.
+_MORPH = None
+
+
+def _get_morph():
+    global _MORPH
+    if _MORPH is None:
+        try:
+            import pymorphy3
+
+            _MORPH = pymorphy3.MorphAnalyzer()
+        except Exception:
+            _MORPH = False  # недоступно — откат к эвристике стеммов
+    return _MORPH
+
 
 AI_SLOP_PHRASES = (
     # Канцелярит / пояснительные клише
@@ -242,6 +259,39 @@ def _missing_required_terms(
     return missing
 
 
+def _get_stem(w: str) -> str:
+    """Эвристический корень слова — откат, когда pymorphy3 недоступен.
+
+    Отбрасываем окончание так, чтобы общий корень пережил падежные формы.
+    НЕ покрывает беглые гласные (огонь/огня) — для них нужен pymorphy3.
+    """
+    if len(w) <= 3:
+        return w
+    if len(w) <= 5:
+        return w[:-1]
+    return w[: max(4, len(w) - 4)]
+
+
+def _word_lemmas(morph, w: str) -> set[str]:
+    """Все возможные леммы слова через pymorphy3.
+
+    Одно слово может разбираться по-разному (например, «громовой» — и фамилия
+    «Громов», и прилагательное «громовой»), и pymorphy3 по умолчанию возвращает
+    только первый, самый частый, разбор. Берём леммы из всех разборов, чтобы
+    матч переживал любые трактовки.
+    """
+    if not morph:
+        return {_get_stem(w)}
+    try:
+        parses = morph.parse(w)
+        lemmas = {p.normal_form for p in parses if p.normal_form}
+        if lemmas:
+            return lemmas
+    except Exception:
+        pass
+    return {_get_stem(w)}
+
+
 def _russian_term_occurs_in_text(term: str, text: str) -> bool:
     normalized_term = term.lower().strip()
     normalized_text = text.lower().strip()
@@ -253,31 +303,29 @@ def _russian_term_occurs_in_text(term: str, text: str) -> bool:
     if not term_words:
         return False
 
-    def get_stem(w: str) -> str:
-        if len(w) <= 3:
-            if w[-1] in "аеёиоуыэюя":
-                return w[:-1]
-            return w
-        if len(w) == 4:
-            if w[-1] in "аеёиоуыэюя":
-                return w[:-1]
-            return w
-        if len(w) == 5:
-            return w[:-1]
-        return w[:max(4, len(w) - 3)]
+    morph = _get_morph()
 
-    parts = []
-    for i, w in enumerate(term_words):
-        stem = get_stem(w)
-        escaped_stem = re.escape(stem)
-        if i == 0:
-            parts.append(rf"\b{escaped_stem}\w*")
-        else:
-            parts.append(rf"\w*{escaped_stem}\w*")
+    # Леммы каждого слова термина (множество, т.к. разборов может быть много).
+    term_lemma_sets = [_word_lemmas(morph, w) for w in term_words]
 
-    pattern = r"[^\w]+".join(parts)
-    pattern += r"\b"
-    return re.search(pattern, normalized_text) is not None
+    # Множество всех лемм текста (один проход) — устойчиво к падежу, числу,
+    # перестановке слов и альтернативным разборам pymorphy3.
+    text_lemmas: set[str] = set()
+    for w in re.findall(f"[{word_char}]+", normalized_text):
+        text_lemmas |= _word_lemmas(morph, w)
+
+    if morph:
+        # Каждое слово термина должно совпасть хотя бы с одной леммой текста.
+        return all(term_set & text_lemmas for term_set in term_lemma_sets)
+
+    # Откат без pymorphy3: матч по префиксу стемма (как раньше).
+    return all(
+        any(
+            re.search(rf"\b{re.escape(stem)}\w*", normalized_text) is not None
+            for stem in lemma_set
+        )
+        for lemma_set in term_lemma_sets
+    )
 
 
 def _term_occurs_in_text(term: str, text: str) -> bool:
