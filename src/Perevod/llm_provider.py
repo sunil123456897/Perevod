@@ -128,10 +128,17 @@ class GeminiModelAdapter:
                         "generateContent",
                     )
                 self._apply_rate_limit(sleep_func)
+                _llm_start = time.monotonic()
                 response = self.client.models.generate_content(
                     model=self.model_name,
                     contents=prompt,
                     config=config,
+                )
+                _llm_elapsed = time.monotonic() - _llm_start
+                logger.info(
+                    "LLM-тайминг: модель '%s' ответила за %.2f с (generateContent).",
+                    self.model_name,
+                    _llm_elapsed,
                 )
                 if self.usage_tracker:
                     temp_res_id = reservation_id
@@ -220,10 +227,17 @@ class GeminiEmbeddingAdapter:
                         self.model_name,
                         "embedContent",
                     )
+                _embed_start = time.monotonic()
                 response = self.client.models.embed_content(
                     model=self.model_name,
                     contents=texts,
                     config=config,
+                )
+                logger.info(
+                    "LLM-тайминг: модель '%s' сделала embedding за %.2f с (%d текстов).",
+                    self.model_name,
+                    time.monotonic() - _embed_start,
+                    len(texts) if isinstance(texts, (list, tuple)) else 1,
                 )
                 if self.usage_tracker:
                     temp_res_id = reservation_id
