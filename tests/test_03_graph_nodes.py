@@ -706,6 +706,8 @@ def test_translation_node_fails_when_chunk_translation_is_empty(
     result = translation_node(state)
 
     assert result["processed_chapters"] == []
+    assert len(result["failed_chapters"]) == 1
+    assert result["failed_chapters"][0]["title"] == "Long Chapter"
     assert "Long Chapter" in result["error"]
     assert "часть 2/2" in result["error"]
     assert "пустой перевод" in result["error"]
@@ -731,10 +733,15 @@ def test_translation_node_preserves_successes_and_returns_error(
 
     result = translation_node(state)
 
+    # Chapter 1 succeeded and is recorded.
     assert result["processed_chapters"][0]["title"] == "Chapter 1"
     assert result["processed_chapters"][0]["input_path"] == "in1.txt"
     assert result["processed_chapters"][0]["output_path"] == "out1.txt"
     assert result["processed_chapters"][0]["cache_key"]
+    # Chapter 2 failed but did NOT abort the loop — it is reported as a
+    # recoverable partial failure so resume can retry it later.
+    assert len(result["failed_chapters"]) == 1
+    assert result["failed_chapters"][0]["title"] == "Chapter 2"
     assert "Chapter 2" in result["error"]
     assert "quota exhausted" in result["error"]
     mock_write_chapter.assert_called_once_with("out1.txt", "Первый перевод.")

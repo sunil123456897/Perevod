@@ -1752,6 +1752,67 @@ class TestGraphRunner(unittest.TestCase):
     @patch("src.Perevod.graph_runner.KnowledgeBaseManager")
     @patch("src.Perevod.graph_runner.LLMProvider")
     @patch("src.Perevod.graph_runner.build_graph")
+    def test_partial_failure_does_not_raise(
+        self,
+        mock_build_graph,
+        mock_llm_provider,
+        mock_kb_manager,
+        mock_db_manager,
+    ):
+        """When some chapters fail but others succeed, the workflow must NOT
+        raise — it keeps the successful translations and lets resume retry the
+        failed ones later. This is what prevents an overnight batch from being
+        lost to a single transient API timeout."""
+        mock_app = MagicMock()
+        mock_app.invoke.return_value = {
+            "processed_chapters": [{"title": "chapter1"}],
+            "failed_chapters": [
+                {"title": "chapter2", "error": "timeout"}
+            ],
+            "error": (
+                "Не удалось перевести 1 глав(ы): chapter2. "
+                "Остальные главы переведены успешно."
+            ),
+        }
+        mock_build_graph.return_value = mock_app
+
+        mock_kb = MagicMock()
+        mock_kb.collection.count.return_value = 0
+        mock_kb_manager.return_value = mock_kb
+
+        project_name = "test_partial_failure"
+        input_dir = os.path.join(self.test_temp_dir, project_name, "input")
+        output_dir = os.path.join(self.test_temp_dir, project_name, "output")
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+        with open(os.path.join(input_dir, "chapter1.txt"), "w", encoding="utf-8") as f:
+            f.write("first chapter")
+        with open(os.path.join(input_dir, "chapter2.txt"), "w", encoding="utf-8") as f:
+            f.write("second chapter")
+
+        # Must NOT raise even though there is an error, because some chapters
+        # were processed successfully and the rest are recoverable failures.
+        final_state = run_translation_workflow(
+            project_name,
+            {
+                "input_dir": input_dir,
+                "output_dir": output_dir,
+                "GOOGLE_API_KEY": "AIza-real-looking-key",
+            },
+        )
+
+        self.assertEqual(len(final_state["processed_chapters"]), 1)
+        self.assertEqual(len(final_state["failed_chapters"]), 1)
+        # The informational error is preserved for the report.
+        self.assertIn("chapter2", final_state["error"])
+        # Report is still written.
+        report_path = os.path.join(output_dir, "translation_report.json")
+        self.assertTrue(os.path.exists(report_path))
+
+    @patch("src.Perevod.graph_runner.DatabaseManager")
+    @patch("src.Perevod.graph_runner.KnowledgeBaseManager")
+    @patch("src.Perevod.graph_runner.LLMProvider")
+    @patch("src.Perevod.graph_runner.build_graph")
     def test_workflow_records_discovered_chapter_runs(
         self,
         mock_build_graph,
@@ -4317,6 +4378,83 @@ class TestGraphRunner(unittest.TestCase):
         # Не должен возвращать True при include_incomplete=False
         self.assertFalse(_should_retry_checkpoint_run(run_passed, include_incomplete=False))
 
+    @patch("src.Perevod.graph_runner.DatabaseManager")
+    @patch("src.Perevod.graph_runner.KnowledgeBaseManager")
+    @patch("src.Perevod.graph_runner.LLMProvider")
+    @patch("src.Perevod.graph_runner.build_graph")
+    def test_resume_skips_chapter_renamed_to_russian_prefix(
+        self,
+        mock_build_graph,
+        mock_llm_provider,
+        mock_kb_manager,
+        mock_db_manager,
+    ):
+        """A chapter whose output file was renamed to "Глава NNN ..." (by the
+        rename_chapters script) must still be detected as already translated so
+        that resume does not re-translate it (which would produce duplicates)."""
+        captured_state = {}
+
+        def invoke(state):
+            captured_state["chapters_to_process"] = state["chapters_to_process"]
+            return {
+                "processed_chapters": state["chapters_to_process"],
+                "judge_results": [],
+                "chapter_summaries": [],
+                "summary_errors": [],
+                "error": None,
+            }
+
+        mock_app = MagicMock()
+        mock_app.invoke.side_effect = invoke
+        mock_build_graph.return_value = mock_app
+
+        mock_kb = MagicMock()
+        mock_kb.collection.count.return_value = 0
+        mock_kb_manager.return_value = mock_kb
+
+        project_name = "test_resume_renamed_output"
+        input_dir = os.path.join(self.test_temp_dir, project_name, "input")
+        output_dir = os.path.join(self.test_temp_dir, project_name, "output")
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+        # Two source chapters.
+        with open(
+            os.path.join(input_dir, "Chapter 604 A Bountiful Harvest.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("chapter 604 source")
+        with open(
+            os.path.join(input_dir, "Chapter 622 Grand Occasion.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("chapter 622 source")
+        # Chapter 604 was translated AND renamed to the Russian prefix.
+        with open(
+            os.path.join(output_dir, "Глава 604. Богатый урожай.txt"),
+            "w",
+            encoding="utf-8",
+        ) as f:
+            f.write("перевод 604")
+        # Chapter 622 has no output yet -> must be processed.
+
+        run_translation_workflow(
+            project_name,
+            {
+                "input_dir": input_dir,
+                "output_dir": output_dir,
+                "GOOGLE_API_KEY": "AIza-real-looking-key",
+            },
+        )
+
+        processed_titles = [
+            chapter["title"]
+            for chapter in captured_state["chapters_to_process"]
+        ]
+        # Only the not-yet-translated chapter should be processed.
+        self.assertEqual(processed_titles, ["Chapter 622 Grand Occasion"])
+
 
 class TestChapterFilter(unittest.TestCase):
     def test_parse_range(self):
@@ -4351,3 +4489,6 @@ class TestChapterFilter(unittest.TestCase):
 
     def test_chapter_number_returns_none_without_digits(self):
         self.assertIsNone(_chapter_number("prologue.txt"))
+
+    def test_chapter_number_returns_none_for_empty(self):
+        self.assertIsNone(_chapter_number(""))

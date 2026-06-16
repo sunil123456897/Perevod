@@ -20,12 +20,15 @@ def main() -> int:
     cov.erase()
     cov.start()
     try:
+        # NOTE: deliberately no --basetemp override. Forcing basetemp into the
+        # repo tree made pytest emit Windows extended-length paths (\\?\...),
+        # which broke shutil.rmtree in fixture teardown and tanked the whole
+        # coverage run (hundreds of setup ERRORS). pytest's default %TEMP%
+        # location is outside the repo and already ignored via .gitignore.
         result = pytest.main(
             [
                 *DEFAULT_TESTS,
                 "-q",
-                "--basetemp",
-                str(repo_root / ".pytest_tmp_coverage"),
                 "-o",
                 "addopts=-p no:cacheprovider",
                 "-p",

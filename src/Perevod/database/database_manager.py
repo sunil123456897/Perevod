@@ -1,5 +1,3 @@
-# --- НАЧАЛО ФАЙЛА: src/Perevod/database/database_manager.py ---
-
 import os
 import logging
 from contextlib import contextmanager
@@ -30,7 +28,6 @@ class DatabaseManager:
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
         self.engine, self.Session = get_engine_and_session(self.db_path)
-        # --- ДОБАВЛЕНО: Логирование пути к БД для диагностики ---
         logger.info(f"DatabaseManager инициализируется. Абсолютный путь к БД: {os.path.abspath(self.db_path)}")
         self.project_id = self._get_or_create_project_id()
         logger.info(
@@ -53,9 +50,6 @@ class DatabaseManager:
     def _get_or_create_project_id(self):
         with self.session_scope() as s:
             search_name = self.project_name
-
-            # --- ДОБАВЛЕНО: Более детальное логирование для диагностики ---
-            logger.debug(f"DBManager: Поиск проекта по имени: '{search_name}'")
 
             p = s.query(Project).filter_by(name=search_name).first()
 
@@ -83,7 +77,6 @@ class DatabaseManager:
     # --- Словарь ---
     def get_terms_dictionary(self):
         with self.session_scope() as s:
-            # --- ИСПРАВЛЕНО: Возвращает консистентный ключ 'russian_term' ---
             return {
                 t.english_term: {"russian_term": t.russian_term, "category": t.category}
                 for t in s.query(Term).filter_by(project_id=self.project_id).all()
@@ -409,8 +402,6 @@ class DatabaseManager:
                 .all()
             }
 
-    # --- ИСПРАВЛЕНО: Удален дубликат метода add_dictionary_proposal ---
-
     def delete_dictionary_proposal(self, term):
         with self.session_scope() as s:
             s.query(DictionaryProposal).filter_by(project_id=self.project_id, english_term=term).delete()
@@ -456,8 +447,6 @@ class DatabaseManager:
     def get_world_bible_proposals(self):
         with self.session_scope() as s:
             return { p.english_name: {"russian_name": p.russian_name, "category": p.category, "description": p.description} for p in s.query(WorldBibleProposal).filter_by(project_id=self.project_id).all() }
-
-    # --- ИСПРАВЛЕНО: Удален дубликат метода add_world_bible_proposal ---
 
     def count_world_bible_proposals(self):
         with self.session_scope() as s:
@@ -709,5 +698,3 @@ class DatabaseManager:
                 }
                 for run in runs
             }
-
-# --- КОНЕЦ ФАЙЛА: src/Perevod/database/database_manager.py ---

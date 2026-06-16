@@ -47,6 +47,7 @@ DEFAULT_TESTS = [
     "tests/test_run_entrypoint.py",
     "tests/test_main_entrypoint.py",
     "tests/test_run_coverage_script.py",
+    "tests/test_report_and_retry_matrix.py",
 ]
 
 

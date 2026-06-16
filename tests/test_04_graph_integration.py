@@ -74,7 +74,11 @@ def test_workflow_wires_dependencies_and_chapters(
     final_state = run_translation_workflow("integration_test_project", project_settings)
 
     mock_makedirs.assert_called_once_with(r"C:\novel\output", exist_ok=True)
-    mock_listdir.assert_called_once_with(r"C:\novel\input")
+    # listdir is called for the input dir (to enumerate chapters) and for the
+    # output dir (to detect already-translated, possibly renamed chapters).
+    assert mock_listdir.call_count == 2
+    mock_listdir.assert_any_call(r"C:\novel\input")
+    mock_listdir.assert_any_call(r"C:\novel\output")
     mock_isfile.assert_called_once()
     mock_exists.assert_called_once_with(r"C:\novel\output\chapter1.txt")
     mock_db_manager.assert_called_once_with("integration_test_project")

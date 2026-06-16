@@ -3,6 +3,8 @@ import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from Perevod.model_registry import (
+    DEFAULT_EDITOR_MODEL,
+    DEFAULT_EXPERT_JUDGE_MODEL,
     DEFAULT_TASK_MODELS,
     GEMINI_EMBEDDING,
     normalize_embedding_model as _normalize_embedding_model,
@@ -39,8 +41,8 @@ class Settings(BaseSettings):
     translation_model_name: str = DEFAULT_TASK_MODELS["translation"]
     qa_model_name: str = DEFAULT_TASK_MODELS["qa"]
     judge_model_name: str = DEFAULT_TASK_MODELS["qa"]
-    expert_judge_model_name: str = "gemini-3.5-flash"
-    editor_model_name: str = "gemini-3.5-flash"
+    expert_judge_model_name: str = DEFAULT_EXPERT_JUDGE_MODEL
+    editor_model_name: str = DEFAULT_EDITOR_MODEL
     summarization_model_name: str = DEFAULT_TASK_MODELS["summarization"]
 
     # Модель для создания эмбеддингов

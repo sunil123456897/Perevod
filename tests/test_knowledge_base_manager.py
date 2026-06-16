@@ -386,6 +386,39 @@ def test_genai_embedding_function_rejects_partial_embedding_responses(tmp_path):
     assert client.models.embed_content.call_count == 2
 
 
+def test_genai_embedding_function_chunks_large_batches_into_small_requests(tmp_path):
+    """Large embedding requests must be chunked to avoid Gemini returning
+    fewer embeddings than inputs (observed at batch size ~95)."""
+    client = MagicMock()
+
+    def fake_embed_content(*, model, contents, config):
+        return MagicMock(
+            embeddings=[MagicMock(values=[0.9]) for _ in contents]
+        )
+
+    client.models.embed_content.side_effect = fake_embed_content
+
+    embedding_function = GenAIEmbeddingFunction(
+        api_key="key",
+        model_name="gemini-embedding-2",
+        client=client,
+        cache_path=str(tmp_path / "embedding_cache_chunked.sqlite3"),
+        embed_request_batch_size=3,
+    )
+
+    inputs = [f"text_{i}" for i in range(10)]
+    result = embedding_function(inputs)
+
+    assert result == [[0.9]] * 10
+    # 10 inputs / batch size 3 -> ceil(10/3) = 4 requests
+    assert client.models.embed_content.call_count == 4
+    sent_sizes = [
+        len(call.kwargs["contents"])
+        for call in client.models.embed_content.call_args_list
+    ]
+    assert sent_sizes == [3, 3, 3, 1]
+
+
 def test_genai_embedding_function_rejects_empty_embedding_vectors(tmp_path):
     client = MagicMock()
     client.models.embed_content.return_value = MagicMock(

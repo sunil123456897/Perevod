@@ -1,12 +1,20 @@
 # src/Perevod/agents/nodes/judge.py
 import logging
 import json
+import re
 
 from Perevod.agents.state import AgentState
 from Perevod.schemas import JudgeResult
 from Perevod.utils.llm import safe_json_loads
-from Perevod.utils.translation_quality import evaluate_translation_sanity, merge_severity
-from Perevod.agents.nodes.translation import _load_canonical_dictionary
+from Perevod.utils.translation_quality import (
+    _term_occurs_in_text,
+    evaluate_translation_sanity,
+    merge_severity,
+)
+from Perevod.agents.nodes.translation import (
+    _dictionary_for_chapter,
+    _load_canonical_dictionary,
+)
 from Perevod.utils.api_errors import gemini_api_error_metadata
 from Perevod.agents.checkpoints import chapter_stage_done, mark_chapter_stage, update_chapter_judge_result
 
@@ -126,15 +134,22 @@ Return ONLY valid JSON with this shape:
         try:
             original_text = tool_read_chapter(chapter_data["input_path"])
             translated_text = tool_read_chapter(chapter_data["output_path"])
+            # Фильтруем канонический словарь так же, как он фильтруется перед
+            # отправкой в промпт перевода (_dictionary_for_chapter). Без этого
+            # QA-проверка оценивала бы термины, которых LLM никогда не получал,
+            # что порождало ложные "Canonical dictionary terms are missing".
+            chapter_dictionary = _dictionary_for_chapter(
+                canonical_dictionary, original_text
+            )
             sanity_result = evaluate_translation_sanity(
                 original_text,
                 translated_text,
-                canonical_dictionary,
+                chapter_dictionary,
             )
 
             prompt = judge_prompt_template.format(
                 dictionary=json.dumps(
-                    canonical_dictionary, ensure_ascii=False, indent=2
+                    chapter_dictionary, ensure_ascii=False, indent=2
                 ),
                 context=chapter_data.get("relevant_context", ""),
                 original_text=original_text,
@@ -181,11 +196,9 @@ Return ONLY valid JSON with this shape:
                 found_trans = update.get("found_translation")
                 if eng_term and found_trans:
                     # Verify that the synonym occurs in the translated text
-                    from Perevod.utils.translation_quality import _term_occurs_in_text
                     if _term_occurs_in_text(found_trans, translated_text):
                         current_val = canonical_dictionary.get(eng_term, "")
                         if current_val:
-                            import re
                             existing_variants = [v.strip().lower() for v in re.split(r"/|;", current_val) if v.strip()]
                             if found_trans.strip().lower() not in existing_variants:
                                 new_val = f"{current_val} / {found_trans.strip()}"
@@ -209,12 +222,17 @@ Return ONLY valid JSON with this shape:
                                     canonical_dictionary[eng_term] = new_val
                                     has_db_updates = True
 
-            # If there were synonym updates, re-evaluate sanity check with updated dictionary
+            # If there were synonym updates, re-evaluate sanity check with
+            # the updated, chapter-filtered dictionary (consistent with the
+            # dictionary actually shown to the LLM during translation).
             if has_db_updates:
+                chapter_dictionary = _dictionary_for_chapter(
+                    canonical_dictionary, original_text
+                )
                 sanity_result = evaluate_translation_sanity(
                     original_text,
                     translated_text,
-                    canonical_dictionary,
+                    chapter_dictionary,
                 )
 
             blocking_issues = list(

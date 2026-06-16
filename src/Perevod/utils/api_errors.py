@@ -17,6 +17,25 @@ RETRYABLE_ERROR_TOKENS = (
     "serviceunavailable",
     "unavailable",
     "deadlineexceeded",
+    # httpx transport/protocol exceptions are transient network failures but
+    # do NOT inherit from the builtin ConnectionError, so they must be matched
+    # by class name (lower-cased in the error fingerprint) or message tokens.
+    "remoteprotocolerror",
+    "localprotocolerror",
+    "protocolerror",
+    "transporterror",
+    "proxyerror",
+    "readerror",
+    "writeerror",
+    "closeerror",
+    "server disconnected",
+    "peer closed",
+    "connection reset",
+    "connection aborted",
+    "connection refused",
+    "remotedisconnected",
+    "remoteendclosed",
+    "incompleteread",
 )
 NON_RETRYABLE_ERROR_TOKENS = (
     "resource_exhausted",
@@ -131,6 +150,21 @@ def classify_api_error(error: Exception) -> ApiErrorInfo:
             status_code=None,
             message=sanitize_api_error_message(str(error)),
         )
+    # httpx/httpcore transport errors (RemoteProtocolError, ConnectError,
+    # ReadTimeout, etc.) all derive from httpx.HTTPError but not from the
+    # builtin ConnectionError/TimeoutError, so detect them explicitly.
+    try:
+        import httpx  # local import to avoid hard dependency at import time
+
+        if isinstance(error, httpx.TransportError):
+            return ApiErrorInfo(
+                category="network",
+                retryable=True,
+                status_code=None,
+                message=sanitize_api_error_message(str(error)),
+            )
+    except Exception:  # pragma: no cover - httpx always present in this project
+        pass
     retryable = isinstance(error, TimeoutError | ConnectionError)
     return ApiErrorInfo(
         category="network" if retryable else "unknown",

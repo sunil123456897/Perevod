@@ -54,3 +54,12 @@ verify_db.py
 download_punkt.py
 download_punkt_tab.py
 update_files_for_neronka.py
+
+# Local translation-run artifacts and ad-hoc helpers
+_chapters_*.txt
+_run_translate_*.bat
+scripts/_edge_profile/
+scripts/_probe_out/
+scripts/_report_status.py
+scripts/_test_filter.py
+title_cache.json

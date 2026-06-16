@@ -116,7 +116,11 @@ def test_gemini_model_adapter_applies_default_timeout_to_direct_calls():
     adapter.generate_content("prompt")
 
     kwargs = client.models.generate_content.call_args.kwargs
-    assert kwargs["config"].http_options.timeout == 300000
+    # Default request timeout was raised from 300s to 600s because large
+    # generation models (e.g. gemma-4-31b-it translating a full chapter with
+    # rich context) can legitimately exceed 5 minutes on the free tier and
+    # were timing out only to succeed on retry.
+    assert kwargs["config"].http_options.timeout == 600000
 
 
 def test_gemini_model_adapter_retries_temporary_server_errors():

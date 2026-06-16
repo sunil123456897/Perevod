@@ -55,6 +55,7 @@ class GenAIEmbeddingFunction:
         max_retries: int = 4,
         initial_delay: float = 10,
         sleep_func=time.sleep,
+        embed_request_batch_size: int = 10,
     ):
         self.model_name = model_name
         self.client = client or genai.Client(api_key=api_key)
@@ -63,6 +64,11 @@ class GenAIEmbeddingFunction:
         self.max_retries = max_retries
         self.initial_delay = initial_delay
         self.sleep_func = sleep_func
+        # Gemini embed_content unreliably returns fewer embeddings than inputs
+        # when the batch is large (observed: 1 returned for 95 sent). Chunking
+        # to a small per-request size keeps the API honest and isolates flaky
+        # responses to a single chunk.
+        self.embed_request_batch_size = embed_request_batch_size
 
     def name(self=None) -> str:
         return "google_genai"
@@ -219,8 +225,7 @@ class GenAIEmbeddingFunction:
             input, task_type
         )
         if missing_texts:
-            response = self._embed_remote(missing_texts, task_type)
-            new_embeddings = self._extract_embeddings(response, len(missing_texts))
+            new_embeddings = self._embed_remote_batched(missing_texts, task_type)
             try:
                 self._write_cached_embeddings(missing_texts, new_embeddings, task_type)
             except (OSError, sqlite3.Error) as exc:
@@ -232,6 +237,24 @@ class GenAIEmbeddingFunction:
             for index, embedding in zip(missing_indexes, new_embeddings):
                 cached[index] = embedding
         return [embedding or [] for embedding in cached]
+
+    def _embed_remote_batched(
+        self, texts: list[str], task_type: str
+    ) -> list[list[float]]:
+        """Embed a list of texts by splitting it into small per-request chunks.
+
+        Gemini's embed_content endpoint unreliably returns fewer embeddings
+        than the number of inputs for large batches. Splitting into small
+        chunks bounds the impact of a partial/flaky response to one chunk
+        and lets each chunk retry independently.
+        """
+        batch_size = max(1, self.embed_request_batch_size)
+        all_embeddings: list[list[float]] = []
+        for start in range(0, len(texts), batch_size):
+            chunk = texts[start : start + batch_size]
+            response = self._embed_remote(chunk, task_type)
+            all_embeddings.extend(self._extract_embeddings(response, len(chunk)))
+        return all_embeddings
 
     def _embed_remote(self, texts: list[str], task_type: str):
         for attempt in range(1, self.max_retries + 1):

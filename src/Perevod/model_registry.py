@@ -63,6 +63,12 @@ DEFAULT_TASK_MODELS = {
     "summarization": GEMINI_FLASH_LITE,
 }
 
+# Auxiliary expert models used for QA escalation and refinement.
+# Kept in the registry (not hardcoded in config) so that a model rename or
+# budget change only touches one place.
+DEFAULT_EXPERT_JUDGE_MODEL = GEMINI_35_FLASH
+DEFAULT_EDITOR_MODEL = GEMINI_35_FLASH
+
 AVAILABLE_TEXT_MODELS = [
     GEMINI_FLASH,
     GEMINI_FLASH_LITE,

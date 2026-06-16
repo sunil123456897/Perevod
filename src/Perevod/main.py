@@ -58,6 +58,15 @@ def main(argv=None):
         help="Перезапустить failed/qa_failed и главы с failed stages/warnings из последнего отчета.",
     )
     parser.add_argument(
+        "--rejudge-existing",
+        action="store_true",
+        help="Перепроверить судьёй уже переведённые главы по текущим правилам QA.",
+    )
+    parser.add_argument(
+        "--chapters",
+        help="Обрабатывать только указанные главы, например '604-871' или '604,610,620'.",
+    )
+    parser.add_argument(
         "--doctor",
         action="store_true",
         help="Проверить окружение и настройки проекта без запуска GUI.",
@@ -103,6 +112,10 @@ def main(argv=None):
             overrides["retry_failed"] = True
         if cli_args.retry_incomplete:
             overrides["retry_incomplete"] = True
+        if cli_args.rejudge_existing:
+            overrides["rejudge_existing"] = True
+        if cli_args.chapters:
+            overrides["chapter_filter"] = cli_args.chapters
         return run_cli_translation(
             cli_args.project,
             {key: value for key, value in overrides.items() if value is not None},

@@ -6,7 +6,7 @@ from collections import defaultdict
 
 from Perevod.agents.state import AgentState
 from Perevod.agents.checkpoints import chapter_stage_done, mark_chapter_stage
-from Perevod.schemas import AnalysisResult
+from Perevod.schemas import TermAnalysis
 from Perevod.agents import nodes
 from Perevod.utils.llm import generate_text
 from Perevod.utils.api_errors import gemini_api_error_metadata
@@ -81,11 +81,32 @@ CHAPTER TEXT:
                 context.get("settings", {}),
             )
             parsed_response = nodes.safe_json_loads(response_text, default={})
-            analysis_result = AnalysisResult.model_validate(parsed_response)
-            found_terms_list = [
-                {**term.model_dump(), "source_chapter": title}
-                for term in analysis_result.found_terms
-            ]
+            raw_terms = parsed_response.get("found_terms", []) if isinstance(parsed_response, dict) else []
+            # Validate each term individually so one malformed term (e.g. an LLM
+            # entry missing russian_translation) is skipped with a warning
+            # instead of crashing the whole workflow. Only well-formed terms
+            # reach the dictionary/curation stages.
+            found_terms_list = []
+            for idx, raw in enumerate(raw_terms):
+                if not isinstance(raw, dict):
+                    logger.warning(
+                        "Анализ главы '%s': термин #%d проигнорирован (не объект).",
+                        title,
+                        idx,
+                    )
+                    continue
+                try:
+                    term = TermAnalysis.model_validate(raw)
+                except Exception as term_err:
+                    logger.warning(
+                        "Анализ главы '%s': термин #%d (%r) проигнорирован: %s",
+                        title,
+                        idx,
+                        raw.get("english_term", "?"),
+                        term_err,
+                    )
+                    continue
+                found_terms_list.append({**term.model_dump(), "source_chapter": title})
             all_found_terms.extend(found_terms_list)
             mark_chapter_stage(db_manager, title, "analysis_done", "done")
 

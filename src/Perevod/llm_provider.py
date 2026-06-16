@@ -47,7 +47,7 @@ class GeminiModelAdapter:
         min_interval_seconds: float | None = None,
         last_call_times: dict[str, float] | None = None,
         time_func=time.monotonic,
-        default_request_timeout_seconds: int = 300,
+        default_request_timeout_seconds: int = 600,
         rate_limit_lock=None,
     ):
         self.client = client
@@ -84,8 +84,9 @@ class GeminiModelAdapter:
         prompt: str,
         generation_config: dict | None = None,
         request_options: dict | None = None,
-        max_retries: int = 4,
+        max_retries: int = 6,
         initial_delay: float = 10,
+        max_delay: float = 60,
         sleep_func=time.sleep,
     ):
         generation_config = generation_config or {}
@@ -160,7 +161,7 @@ class GeminiModelAdapter:
                         error,
                     ) from error
 
-                delay = initial_delay * (2 ** (attempt - 1))
+                delay = min(initial_delay * (2 ** (attempt - 1)), max_delay)
                 logger.warning(
                     "Временная ошибка Gemini API для модели '%s': %s. "
                     "Повторная попытка %s/%s через %.2f секунд.",

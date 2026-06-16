@@ -7,6 +7,7 @@ from Perevod.agents.state import AgentState
 from Perevod.utils.text_planning import estimate_token_count, split_text_by_token_budget
 from Perevod.utils.translation_quality import evaluate_translation_sanity
 from Perevod.agents import nodes
+from Perevod.agents.checkpoints import mark_chapter_stage
 from Perevod.utils.llm import clean_translation_output
 
 logger = logging.getLogger("NovelTranslator.AgentNodes.Translation")
@@ -275,6 +276,7 @@ CRITICAL INSTRUCTIONS:
 FULL RUSSIAN TRANSLATION OF THE CHAPTER (Output ONLY the translated text, no explanations, no tags):
 """
     processed_chapters = []
+    failed_chapters = []  # chapters whose translation failed (e.g. API timeout)
     progress_callback = state.get("progress_callback")
     total_chapters = len(chapters_to_process)
     workflow_error = None
@@ -496,7 +498,6 @@ FULL RUSSIAN TRANSLATION OF THE CHAPTER (Output ONLY the translated text, no exp
                 nodes.tool_write_chapter(chapter_data['output_path'], translated_text)
                 logger.info(f"Глава '{title}' успешно переведена и записана in {chapter_data['output_path']}")
 
-            from Perevod.agents.checkpoints import mark_chapter_stage
             mark_chapter_stage(db_manager, title, "translation_done", "done")
             mark_chapter_stage(db_manager, title, "output_written", "done")
 
@@ -520,15 +521,41 @@ FULL RUSSIAN TRANSLATION OF THE CHAPTER (Output ONLY the translated text, no exp
                 f"Глава '{title}' переведена",
             )
         except Exception as e:
-            workflow_error = f"Ошибка перевода главы '{title}': {e}"
-            logger.error(workflow_error, exc_info=True)
+            chapter_error = f"Ошибка перевода главы '{title}': {e}"
+            logger.error(chapter_error, exc_info=True)
+            failed_chapters.append({"title": title, "error": chapter_error})
             nodes._report_progress(
                 progress_callback,
                 "translation",
                 i,
                 total_chapters,
-                workflow_error,
+                chapter_error,
             )
-            break
+            # Do NOT break the whole run when a single chapter fails (e.g.
+            # transient API timeout that exhausted its retries). Skip it and
+            # keep translating the remaining chapters so an overnight batch
+            # is not lost. Failed chapters are reported at the end and can be
+            # retried on the next resume run.
+            mark_chapter_stage(
+                db_manager, title, "translation_done", "error", error=chapter_error
+            )
+            continue
 
-    return {"processed_chapters": processed_chapters, "error": workflow_error}
+    if failed_chapters:
+        # Build a summary that includes the per-chapter error reasons so they
+        # are visible in logs and the translation report.
+        details = "; ".join(
+            f"{fc['title']}: {fc['error'].split(':', 1)[-1].strip()}"
+            for fc in failed_chapters
+        )
+        workflow_error = (
+            f"Не удалось перевести {len(failed_chapters)} глав(ы): {details}. "
+            f"Остальные главы переведены успешно."
+        )
+        logger.warning(workflow_error)
+
+    return {
+        "processed_chapters": processed_chapters,
+        "failed_chapters": failed_chapters,
+        "error": workflow_error,
+    }
